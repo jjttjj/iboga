@@ -10,7 +10,7 @@ You can get the official IB client source code [here](http://interactivebrokers.
 
 I went down a rabbit hole of trying to make this library more user friendly and present a clojure friendly high level interface, including things like trying reflection and parsing the java source, but ultimatly the versioning scheme IB uses is pretty complex and I gave up when I realized there's not really a way around just doing a 1:1 translation of the Java client into clojure. I don't think managing a project that size is worth what is gained from getting rid of the java client. If someone else is able to figure this out though I am more than happy to take suggestions/PRs!
 
-I think the light approach iboga uses might be useful to some people. Ultimately the way I want to work with these types of APIs is to just simply send them messages and get messages back. To present this interface with the Java client requires:
+I think the light approach iboga uses might be useful to some people. Ultimately the way I want to work with these types of APIs is to just simply send them messages and get messages back (asynchronously in this case). To present this interface with the Java client requires:
 
 ```Clojure data->Java object->Bytes->IB```
 
@@ -92,7 +92,7 @@ We initialize and start the api:
 ;;start-api with client id 101
 (send! (->ib [:start-api 101 ""]))
 ```
-And now we get back some messages printed out (via our handler function being called on them)!
+And now we (asynchronously) get back some messages printed out (via our handler function being called on them)!
 ```clojure
 ["142" "20181214 17:03:05 EST"]
 [:managed-accts "1" "ACCTNUMBER123"]
@@ -102,13 +102,13 @@ And now we get back some messages printed out (via our handler function being ca
 [:err-msg "2" "-1" "2104" "Market data farm connection is OK:eufarm"]
 ...
 ```
-We can get the current time
+We can get the current time:
 
 ```clojure
 (send! (->ib [:current-time]))
 ```
 
-Or get live ticks for AMZN stock
+Or get live ticks for AMZN stock:
 
 ```clojure
 ;;requestMktData with ticker-id 123
@@ -119,7 +119,7 @@ Or get live ticks for AMZN stock
 
 Note that messages like the above that are passed to IB that require a contract definition will tend to be more brutal like that. A helper function to make this easier is left as an exercise to the reader.
 
-we can cancel the market data with the ticker id we defined above
+We can cancel the market data with the ticker id we defined above
 
 ```clojure
 (send! (->ib [:cancel-market-data 123]))
