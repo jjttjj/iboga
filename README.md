@@ -1,6 +1,6 @@
 # iboga
 
-A minimal viable clojure client for Interactive Brokers.
+A minimal viable clojure client for Interactive Brokers's API.
 
 Allows socket connections to Interactive Broker's Trader Workstation software without depending on their client APIs. Iboga is very small, currently under 100 lines of code with no external dependencies.
 
@@ -30,7 +30,7 @@ You can see an example of how this might be used in `dev/example/core.clj`.
 
 It is useful to start defining a big constants map to drive the translation of the messages.
 
-```
+```clojure
 (ns example.constants)
 (def incoming
  {
@@ -58,7 +58,7 @@ You can get a fancier by adding in  parameters for example and checking them, or
 
 Then we add a few helper functions to help use these constants:
 
-```
+```clojure
 (ns example.core
   (:require [iboga.core :as iboga]
             [example.constants :as c]))
@@ -79,21 +79,21 @@ Then we add a few helper functions to help use these constants:
 
 We then connect to an iboga socket, passing it an ip, port and handler function for incoming messages. This gets us a map containing a `send-fn` and a `close-fn`:
 
-```
+```clojure
 (def ib (iboga/socket "127.0.0.1" 7496 (comp prn handler iboga/bytes->strs)))
 (def send!  (:send-fn ib))
 (def close! (:close-fn ib))
 ````
 We initialize and start the api:
 
-```
+```clojure
 (send! (iboga/init-bytes)) ;;Ib requires this initial handshake
 
 ;;start-api with client id 101
 (send! (->ib [:start-api 101 ""]))
 ```
 And now we get back some messages!
-```
+```clojure
 ["142" "20181214 17:03:05 EST"]
 [:managed-accts "1" "ACCTNUMBER123"]
 [:next-valid-id "1" "1"]
@@ -104,13 +104,13 @@ And now we get back some messages!
 ```
 We can get the current time
 
-```
+```clojure
 (send! (->ib [:current-time]))
 ```
 
 Or get live ticks for AMZN stock
 
-```
+```clojure
 ;;requestMktData with ticker-id 123
 (send! (->ib [:market-data 123 nil nil "STK"
               nil nil nil nil "SMART" nil
@@ -121,13 +121,13 @@ Note that messages like the above that are passed to IB that require a contract 
 
 we can cancel the market data with the ticker id we defined above
 
-```
+```clojure
 (send! (->ib [:cancel-market-data 123]))
 ```
 
 Finally we can close our connection with the `close!` function we defined earlier.
 
-```
+```clojure
 (close!)
 ```
 
