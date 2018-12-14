@@ -92,7 +92,7 @@ We initialize and start the api:
 ;;start-api with client id 101
 (send! (->ib [:start-api 101 ""]))
 ```
-And now we get back some messages!
+And now we get back some messages printed out (via our handler function being called on them)!
 ```clojure
 ["142" "20181214 17:03:05 EST"]
 [:managed-accts "1" "ACCTNUMBER123"]
