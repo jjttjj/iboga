@@ -1,6 +1,6 @@
 # iboga
 
-A minimal viable clojure client for Interactive Brokers's API.
+A minimum viable clojure client for Interactive Brokers's API.
 
 Allows socket connections to Interactive Broker's Trader Workstation software without depending on their client APIs. Iboga is very small, currently under 100 lines of code with no external dependencies.
 
