@@ -27,7 +27,7 @@
          (read-in in))
        (catch IOException e :ignore)))
 
-(defn socket-write [^Socket socket ^DataOutputStream out ^bytes x]
+(defn socket-write [^DataOutputStream out ^bytes x]
   (try
     (.write out x 0 (alength x))
     (.flush out)
@@ -55,7 +55,7 @@
     {:close-fn  #(close-socket-client socket)
      :send-fn (fn [x]
                 (if (socket-open? socket) ;;deal with nil/false
-                  (socket-write socket out x)
+                  (socket-write out x)
                   (close-socket-client socket)))
      :socket  socket}))
 
