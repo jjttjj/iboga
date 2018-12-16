@@ -86,10 +86,9 @@ We then connect to an iboga socket, passing it an ip, port and handler function 
 (def send!  (:send-fn ib))
 (def close! (:close-fn ib))
 ````
-We initialize and start the api:
+We start the api:
 
 ```clojure
-(send! (iboga/init-bytes)) ;;Ib requires this initial handshake
 
 ;;start-api with client id 101
 (send! (->ib [:start-api 101 ""]))

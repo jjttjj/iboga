@@ -21,8 +21,6 @@
  (def send!  (:send-fn ib))
  (def close! (:close-fn ib))
 
- (send! (iboga/init-bytes)) ;;Ib requires this initial handshake
-
  ;;figure out message format from: 
  ;;to ib: IBJts/source/JavaClient/com/ib/client/EClient.java
  ;;from ib: IBJts/source/JavaClient/com/ib/client/EDecoder.java
