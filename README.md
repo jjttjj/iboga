@@ -2,7 +2,9 @@
 
 A minimum viable clojure client for Interactive Brokers's API.
 
-Allows socket connections to Interactive Broker's Trader Workstation software without depending on their client APIs. Iboga is very small, currently under 100 lines of code with no external dependencies.
+Iboga is an experiemental work in progress.
+
+Allows socket connections to Interactive Broker's Trader Workstation software without depending on their client APIs. Iboga is very small, currently under 100 lines of code (mostly just dealing with managing the socket connection) with no external dependencies.
 
 The end user of this library is required to figure out the very complicated messaging scheme IB uses internally. This will probably involve digging into the official client's source code.
 
@@ -14,7 +16,7 @@ I think the light approach iboga uses might be useful to some people. Ultimately
 
 ```Clojure data->Java object->Bytes->IB```
 
-```Bytes->Java object->Clojure Data```
+```IB->Bytes->Java object->Clojure Data```
 
 The middle layer always annoyed me when clojure is perfectly capable of sending and receiving bytes on a socket.
 
@@ -28,7 +30,7 @@ I may eventually add into iboga some ways to make things incrementally easier to
 
 You can see an example of how this might be used in `dev/example/core.clj`.
 
-It is useful to start defining a big constants map to drive the translation of the messages.
+It is useful to start by defining a big constants map to drive the translation of the messages.
 
 ```clojure
 (ns example.constants)
@@ -108,13 +110,19 @@ We can get the current time:
 (send! (->ib [:current-time]))
 ```
 
+And asynchronously the following is printed:
+
+```
+[:current-time "1" "1544940600"]
+```
+
 Or get live ticks for AMZN stock:
 
 ```clojure
 ;;requestMktData with ticker-id 123
 (send! (->ib [:market-data 123 nil nil "STK"
-              nil nil nil nil "SMART" nil
-              "USD" "AMZN" nil nil "" "" "" ""]))
+               nil nil nil nil "SMART" nil
+               "USD" "AMZN" nil nil nil nil nil nil]))
 ```
 
 Note that messages like the above that are passed to IB that require a contract definition will tend to be more brutal like that. A helper function to make this easier is left as an exercise to the reader.
@@ -135,6 +143,7 @@ Finally we can close our connection with the `close!` function we defined earlie
 
 * Some sort of error handling and/or logging mechanism (currently just prints some caught exceptions).
 * Possibly a namespace of helper functions
+* Document the process of delving into the Ib source to discover message shapes
 
 ## License
 
