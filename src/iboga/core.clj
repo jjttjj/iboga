@@ -83,7 +83,7 @@
     
     (future (while (socket-open? socket)
               (when-let [x (socket-read-or-nil socket in)]
-                (f x)))
+                (f (bytes->strs x))))
             ;;(println "closing socket")
             )
 
@@ -92,6 +92,6 @@
      :close-fn        #(close-socket-client socket)
      :send-fn         (fn [x]
                         (if (socket-open? socket) ;;deal with nil/false
-                          (socket-write out x)
+                          (socket-write out (msg->bytes x))
                           (close-socket-client socket)))
      :socket          socket}))

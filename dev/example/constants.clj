@@ -69,7 +69,7 @@
    })
 
 (def outgoing
-  {:start-api          {:code 71 :version 2 :params [:client-id]} ;;todo:connection options  
+  {:start-api          {:code 71 :version 2} ;;todo:connection options  
    :market-data        {:code 1 :version 11}
    :cancel-market-data {:code 2 :version 1}
    :current-time       {:code 49 :version 1}

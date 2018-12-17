@@ -71,18 +71,17 @@ Then we add a few helper functions to help use these constants:
   (assoc msg 0 (get c/incoming (Integer/parseInt (first msg)) (first msg))))
 
 (defn ->ib
-  "Takes a vector prefaced with an outgoing message type keyword, replaces that with the integer id IB uses as well as the message version we're using, then translates the resulting message to the byte array IB takes."
+  "Takes a vector prefaced with an outgoing message type keyword and replaces that with the integer id IB uses as well as the message version we're using."
   [msg]
   (-> (get c/outgoing (first msg))
       ((juxt :code :version))
-      (into (rest msg))
-      iboga/msg->bytes))
+      (into (rest msg))))
 ```
 
 We then connect to an iboga socket, passing it an ip, port and handler function for incoming messages. This gets us a map containing a `send-fn` and a `close-fn`:
 
 ```clojure
-(def ib (iboga/socket "127.0.0.1" 7496 (comp prn handler iboga/bytes->strs)))
+(def ib (iboga/socket "127.0.0.1" 7496 (comp prn handler)))
 (def send!  (:send-fn ib))
 (def close! (:close-fn ib))
 ````
@@ -144,6 +143,11 @@ Finally we can close our connection with the `close!` function we defined earlie
 * Possibly a namespace of helper functions
 * Document the process of delving into the Ib source to discover message shapes
 
+## See also
+
+* [node-ib](https://github.com/pilwon/node-ib): Another "from scratch" IB client for Node.js
+* [ib-re-actor](https://github.com/jsab/ib-re-actor): Clojure wrapper for IB's Java api. This is the actively maintained fork, the original project is [here](https://github.com/cbilson/ib-re-actor).
+    
 ## License
 
 Copyright © 2018 Justin Tirrell
