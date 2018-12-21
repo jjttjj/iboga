@@ -16,7 +16,6 @@
            ))))
 
 (defn read-in [^DataInputStream in]
-  (while (zero? (.available in)) "")
   (let [msg-size (.readInt in)
         ba       (byte-array msg-size)]
     (.read in ba 0 msg-size)
