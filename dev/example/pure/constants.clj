@@ -1,4 +1,4 @@
-(ns example.constants)
+(ns example.pure.constants)
 
 (def incoming
   {

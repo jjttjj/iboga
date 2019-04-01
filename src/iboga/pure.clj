@@ -1,4 +1,4 @@
-(ns iboga.core
+(ns iboga.pure
   (:require [clojure.string :as str])
   (:import [java.io BufferedReader DataInputStream DataOutputStream IOException]
            [java.net InetSocketAddress Socket SocketException]

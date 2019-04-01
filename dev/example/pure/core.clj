@@ -1,6 +1,6 @@
-(ns example.core
-  (:require [iboga.core :as iboga]
-            [example.constants :as c]))
+(ns example.pure.core
+  (:require [example.pure.constants :as c]
+            [iboga.pure :as iboga]))
 
 (defn handler
   "Parses the message type of incoming messages"
