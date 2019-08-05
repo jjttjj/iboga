@@ -54,9 +54,22 @@ To install the IB Java client locally
 2. Extract the zip file and navigate to "IBJts/source/JavaClient"
 3. run `mvn install`.
 4. Add one of the following to your deps.edn or project.clj dependencies (replace version string as needed):
-   ```[com.interactivebrokers/tws-api "9.73.01-SNAPSHOT"]```
-   
-   ```com.interactivebrokers/tws-api {:mvn/version "9.73.01-SNAPSHOT"}```
+   ```
+   [com.interactivebrokers/tws-api "9.73.01-SNAPSHOT"]
+   ```
+   ```
+   com.interactivebrokers/tws-api {:mvn/version "9.73.01-SNAPSHOT"}
+   ```
+
+Now you can add the Clojars Iboga dependency
+
+```
+[io.jex/iboga "0.3.0"] ;;leiningen
+```
+```
+io.jex/iboga {:mvn/version "0.3.0"} ;;deps.edn
+```
+[![Clojars Project](https://img.shields.io/clojars/v/io.jex/iboga.svg)](https://clojars.org/io.jex/iboga)
 
 ## Messages 
 
