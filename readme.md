@@ -1,4 +1,4 @@
-<img src="https://imgur.com/ksxyG4I" width=400 align=right />
+<img src="https://i.imgur.com/ksxyG4I.jpg" width=400 align=right />
 
 # Iboga
 
