@@ -63,11 +63,11 @@ To install the IB Java client locally
 
 Now you can add the Clojars Iboga dependency
 
+```clojure
+[io.jex/iboga "0.3.1-SNAPSHOT"] ;;leiningen
 ```
-[io.jex/iboga "0.3.0"] ;;leiningen
 ```
-```
-io.jex/iboga {:mvn/version "0.3.0"} ;;deps.edn
+io.jex/iboga {:mvn/version "0.3.1-SNAPSHOT"} ;;deps.edn
 ```
 [![Clojars Project](https://img.shields.io/clojars/v/io.jex/iboga.svg)](https://clojars.org/io.jex/iboga)
 
@@ -293,10 +293,10 @@ Currently only a small percentage of the API surface area is complete in Iboga. 
 
 Each spec-key in Iboga can have the following schema attributes set for it:
 
-    * `:default-value`: A default value for a request argument spec-key
-    * `:default-fn`: Request argument spec-keys can also have a functionally generated default. `:default-fn` should be a function which takes as argument an argument map with qualified spec-keys as keys, and which already has any `:default-value`s added, and returns a default value.
-    * `:to-ib`: Any spec-key for an argument or "data-type" field can have a `:to-ib` function which translates it to the value recognized by IB.
-    * `from-ib`: Any received message-data key spec-key or "data class" field can have a `from-ib` function which transforms it from the value provided by IB to a clojurey value.
+* `:default-value`: A default value for a request argument spec-key
+* `:default-fn`: Request argument spec-keys can also have a functionally generated default. `:default-fn` should be a function which takes as argument an argument map with qualified spec-keys as keys, and which already has any `:default-value`s added, and returns a default value.
+* `:to-ib`: Any spec-key for an argument or "data-type" field can have a `:to-ib` function which translates it to the value recognized by IB.
+* `from-ib`: Any received message-data key spec-key or "data class" field can have a `from-ib` function which transforms it from the value provided by IB to a clojurey value.
 
 The `set-schema!` function can be used to set schema attributes.
 
@@ -351,4 +351,4 @@ Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version. https://opensource.org/licenses/EPL-1.0
 
 Header Image:
-Tabernanthe iboga plant with mature fruit by Marco Schmidt, used under <a href="https://creativecommons.org/licenses/by-sa/3.0/legalcode">CC BY-SA 3.0</a>. Filter applied to original.
+"Tabernanthe iboga plant with mature fruit" by Marco Schmidt, used under <a href="https://creativecommons.org/licenses/by-sa/3.0/legalcode">CC BY-SA 3.0</a>. Filter applied to original.
