@@ -87,9 +87,11 @@
    {:num-ids {:default-value 1}} 
    
    #:iboga.req.historical-data
-   {:end           {:spec       local-date-time?
-                    :default-fn (fn [_argmap] (LocalDateTime/now))
-                    :to-ib      format-ib-time}
+   {:end           {:spec       (s/nilable local-date-time?)
+                    :default-fn (fn [argmap]
+                                  (when-not (:iboga.req.historical-data/update? argmap)
+                                    (LocalDateTime/now)))
+                    :to-ib      #(when % (format-ib-time %))}
     :duration      {:spec       #(re-find #"[0-9]+ [SDWMY]" %)
                     :default-fn #(default-duration (:iboga.req.historical-data/bar-size %))}
     :bar-size      {:spec :iboga.enum/bar-size :default-value "1 day"}
