@@ -80,7 +80,9 @@
 
    #:iboga.contract
    {:sec-type {:spec :iboga.enum/sec-type}
-    :last-trade-date-or-contract-month {:spec date? :to-ib format-ib-time}}
+    :last-trade-date-or-contract-month {:spec date?
+                                        :to-ib format-ib-time
+                                        :from-ib parse-ib-time}}
    #:iboga.req.ids
    {:num-ids {:default-value 1}} 
    
