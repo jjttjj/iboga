@@ -59,19 +59,10 @@
    argmap
    (meta/req-key->field-keys req-key)))
 
-(defn add-default-nils [req-key argmap]
-  (reduce
-   (fn [m k]
-     (cond-> m
-       (not (contains? m k)) (assoc k nil)))
-   argmap
-   (meta/req-key->field-keys req-key)))
-
 (defn add-defaults [req-key argmap]
   (->> argmap
        (add-default-values req-key)
-       (add-default-fns req-key)
-       (add-default-nils req-key)))
+       (add-default-fns req-key)))
 
 (defn optional? [arg]
   (boolean
