@@ -59,11 +59,6 @@
    argmap
    (meta/req-key->field-keys req-key)))
 
-(defn add-defaults [req-key argmap]
-  (->> argmap
-       (add-default-values req-key)
-       (add-default-fns req-key)))
-
 (defn optional? [arg]
   (boolean
    (or (contains-default-value? arg)
@@ -315,23 +310,6 @@
 (defn arglist->argmap [req-key arglist]
   (zipmap (meta/req-key->field-keys req-key) arglist))
 
-(defn ensure-argmap [[req-key args :as request]]
-  (cond-> request
-    (vector? args) (update 1 #(arglist->argmap req-key %))))
-
-(defn ensure-qualified-argmap [[req-key args :as req]]
-  ;;(assert (map? args))
-  (update req 1 #(qualify-map req-key %)))
-
-(defn qualify-req [req]
-  (-> req
-      (update 0 req-spec-key)
-      ensure-argmap
-      ensure-qualified-argmap))
-
-(defn invoke-req [ecs req-key args]
-  (invoke ecs (meta/msg-key->ib-name req-key) args))
-
 (def validate? (atom true))
 
 (defn validate-reqs [b] (reset! validate? b))
@@ -340,17 +318,56 @@
   (when-not (s/valid? k args)
     (throw (Exception. (ex-info "Invalid request" (s/explain-data k args))))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;req transformers;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn qualify-req-key [req]
+  (update req 0 req-spec-key))
+
+(defn ensure-argmap [[req-key args :as request]]
+  (cond-> request
+    (vector? args) (update 1 #(arglist->argmap req-key %))))
+
+(defn ensure-qualified-argmap [[req-key args :as req]]
+  ;;(assert (map? args))
+  (update req 1 #(qualify-map req-key %)))
+
+(defn merge-default-args [[req-key argmap :as req]]
+  (update req 1 #(->> %
+                      (add-default-values req-key)
+                      (add-default-fns req-key))))
+
+(defn maybe-validate [[req-key qmap :as req]]
+  (when @validate?
+    (assert-valid-req req-key qmap))
+  req)
+
+(defn args-to-ib [[req-key qmap :as req]]
+  (update req 1 to-ib))
+
+(defn prep-ib-call [[req-key qmap :as req]]
+  (-> req
+      (update 0 meta/msg-key->ib-name)
+      (update 1 #(argmap->arglist req-key %))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn invoke-req [ecs [method-str args]]
+  (invoke ecs method-str args))
+
 (defn req [conn request]
   (if-not (connected? conn)
     (throw (Exception. "Not connected"))
-    (let [[req-key argmap] (qualify-req request)
-          argmap           (add-defaults req-key argmap)]
-      (when @validate?
-        (assert-valid-req req-key argmap))
-      (->> argmap
-           to-ib
-           (argmap->arglist req-key)
-           (invoke-req (:ecs conn) req-key)))))
+    (->> request
+         qualify-req-key
+         ensure-argmap
+         ensure-qualified-argmap
+         merge-default-args
+         maybe-validate
+         args-to-ib
+         prep-ib-call
+         (invoke-req (:ecs conn)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
