@@ -257,8 +257,6 @@ While iboga makes the IB api client easier to use it is still fairly low level. 
 
 Currently [wip.clj](src/iboga/wip.clj) exposes some higher level functionality, but I'm not sure manually wrapping the requests like this is the way to go and this namespace is likely to be deprecated at some point.
 
-I believe it might be possible to provide metadata, such as which response message types are expected for a given request type, what the "response finished" message type will be, etc, to expose a higher level api in a more automatic manner.
-
 The `wip.clj` functions can be used as follows:
 
 ```clojure
@@ -276,6 +274,10 @@ The `wip.clj` functions can be used as follows:
 ```
 
 Only a very small portion of the functionality that could be wrapped like this is currently. Feel free to open an issue or submit a PR for any functionality you need here. 
+
+I believe it might be possible to provide metadata, such as which response message types are expected for a given request type, what the "response finished" message type will be, etc, to expose a higher level api in a more automatic manner.
+
+A sketch of how this might be done can be seen in [dev/iboga/wip2.clj](dev/iboga/wip2.clj). 
 
 # Customization
 
