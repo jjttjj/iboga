@@ -84,7 +84,6 @@
 (defmethod cleanup :iboga.req/head-timestamp [conn [req-key argmap]]
   (req conn [:cancel-head-timestamp {:id (:iboga.req.head-timestamp/id argmap)}]))
 
-
 (defn add-id [args id]
     (if (vector? args)
       (into [id] args)
@@ -94,17 +93,8 @@
 
 ;;TODO: error handling
 
-(defn sync-req [conn request & [opt]]
-  (let [{:keys [auto-id]} opt
-        
-        qreq             (-> request
-                             (cond-> auto-id (update 1 add-id (next-id conn)))
-                             qualify-req-key
-                             ensure-argmap
-                             ensure-qualified-argmap
-                             merge-default-args
-                             maybe-validate)
-        fil              (filterer qreq)
+(defn sync-req* [conn qreq]
+  (let [fil              (filterer qreq)
         tak              (taker qreq)
         _                (assert (and fil tak)
                                  (str "sync-req not available for " qreq))
@@ -112,15 +102,20 @@
         {:keys [add! p]} (acc xf conj)
         h                (fn [msg] (add! msg))]
     (add-handler conn h)
-    (->> qreq
-         args-to-ib
-         prep-ib-call
-         (invoke-req (:ecs conn)))
+    (req* conn qreq)
     (let [result (deref p *timeout* ::timeout)]
       (when (= result ::timeout) (throw (ex-info "sync-req timeout" (second qreq))))
+
       (remove-handler conn h)
       (cleanup conn qreq)
       result)))
+
+(defn sync-req [conn request & [opt]]
+  (let [{:keys [auto-id]} opt]
+    (-> request
+        (cond-> auto-id (update 1 add-id (next-id conn)))
+        qify
+        (->> (sync-req* conn)))))
 
 ;;(sync-req conn [:historical-data [TSLA]] {:auto-id true})
 ;;(sync-req conn [:head-timestamp [1234 TSLA]])

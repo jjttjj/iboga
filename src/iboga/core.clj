@@ -356,18 +356,24 @@
 (defn invoke-req [ecs [method-str args]]
   (invoke ecs method-str args))
 
+(defn qify [request]
+  (->> request
+       qualify-req-key
+       ensure-argmap
+       ensure-qualified-argmap
+       merge-default-args
+       maybe-validate))
+
+(defn req* [conn qreq]
+  (->> qreq
+       args-to-ib
+       prep-ib-call
+       (invoke-req (:ecs conn))))
+
 (defn req [conn request]
   (if-not (connected? conn)
     (throw (Exception. "Not connected"))
-    (->> request
-         qualify-req-key
-         ensure-argmap
-         ensure-qualified-argmap
-         merge-default-args
-         maybe-validate
-         args-to-ib
-         prep-ib-call
-         (invoke-req (:ecs conn)))))
+    (req* conn (qify request))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
