@@ -26,8 +26,7 @@
 
 (defn id-filterer [[req-id argmap]]
   (filter (fn [[msg-key msg]]
-            (= ((qualify-key req-id :id) argmap)
-               (:id msg)))))
+            (= (:id argmap) (:id msg)))))
 
 (defmulti filterer
   "Takes a qualified request and returns a transducer which filters
@@ -53,36 +52,35 @@
 ;;messages coming in are all unqualified. This is because we're using the
 ;;regular handler system which unqualifies everything for ease of use.
 
-(defmethod filterer :iboga.req/historical-data [req]
+(defmethod filterer :historical-data [req]
   (id-filterer req))
 
-(defmethod taker :iboga.req/historical-data [[req-id argmap]]
+(defmethod taker :historical-data [[req-id argmap]]
   (m/take-upto
    (fn [[msg-key msg]]
-     (if (:iboga.req.historical-data/update? argmap)
+     (if (:update? argmap)
        (and (= msg-key :error)
             (:error-msg msg)
             (.contains (:error-msg msg) "API historical data query cancelled"))
        (= msg-key :historical-data-end)))))
 
-(defmethod taker :iboga.req/contract-details [[req-id argmap]]
+(defmethod taker :contract-details [[req-id argmap]]
   (m/take-upto
    (fn [[msg-key msg]]
      ;;error?
      (= msg-key :contract-details-end))))
 
-(defmethod filterer :iboga.req/contract-details [req]
+(defmethod filterer :contract-details [req]
   (id-filterer req))
 
-
-(defmethod filterer :iboga.req/head-timestamp [req]
+(defmethod filterer :head-timestamp [req]
   (id-filterer req))
 
-(defmethod taker :iboga.req/head-timestamp [[req-key argmap]]
+(defmethod taker :head-timestamp [[req-key argmap]]
   (take 1))
 
-(defmethod cleanup :iboga.req/head-timestamp [conn [req-key argmap]]
-  (req conn [:cancel-head-timestamp {:id (:iboga.req.head-timestamp/id argmap)}]))
+(defmethod cleanup :head-timestamp [conn [req-key argmap]]
+  (req conn [:cancel-head-timestamp {:id (:id argmap)}]))
 
 (defn add-id [args id]
     (if (vector? args)
@@ -93,28 +91,29 @@
 
 ;;TODO: error handling
 
-(defn sync-req* [conn qreq]
-  (let [fil              (filterer qreq)
-        tak              (taker qreq)
+(defn sync-req* [conn request]
+  (let [fil              (filterer request)
+        tak              (taker request)
         _                (assert (and fil tak)
-                                 (str "sync-req not available for " qreq))
+                                 (str "sync-req not available for " request))
         xf               (comp fil tak)
         {:keys [add! p]} (acc xf conj)
         h                (fn [msg] (add! msg))]
     (add-handler conn h)
-    (req* conn qreq)
+    (req* conn request)
     (let [result (deref p *timeout* ::timeout)]
-      (when (= result ::timeout) (throw (ex-info "sync-req timeout" (second qreq))))
+      (when (= result ::timeout)
+        (throw (ex-info "sync-req timeout" (second request))))
 
       (remove-handler conn h)
-      (cleanup conn qreq)
+      (cleanup conn request)
       result)))
 
 (defn sync-req [conn request & [opt]]
   (let [{:keys [auto-id]} opt]
     (-> request
         (cond-> auto-id (update 1 add-id (next-id conn)))
-        qify
+        normalize-req
         (->> (sync-req* conn)))))
 
 ;;(sync-req conn [:historical-data [TSLA]] {:auto-id true})

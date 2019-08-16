@@ -36,9 +36,9 @@
 
 (s/def ::rth? boolean?)
 
-(def rth? {:spec ::rth? :default-value true :to-ib bool->bit})
+(def rth? {:spec ::rth? :to-ib bool->bit})
 
-(def format-date {:spec #{1} :default-value 1})
+(def format-date {:spec #{1}})
 
 (def recv-date-str {:from-ib parse-ib-time})
 
@@ -62,8 +62,8 @@
   (merge
 
    #:iboga
-   {:tag-value {:spec (s/keys :req [:iboga.tag-value/tag
-                                    :iboga.tag-value/value])
+   {:tag-value {:spec (s/keys :req-un [:iboga.tag-value/tag
+                                       :iboga.tag-value/value])
 
                 ;;TagValues use public fields and are thus not handled by the
                 ;;getter/setter mechanisms of iboga
@@ -79,31 +79,21 @@
                      :value {:spec any?}}
 
    #:iboga.contract
-   {:sec-type {:spec :iboga.enum/sec-type}
-    :last-trade-date-or-contract-month {:spec date?
-                                        :to-ib format-ib-time
+   {:sec-type                          {:spec :iboga.enum/sec-type}
+    :last-trade-date-or-contract-month {:spec    date?
+                                        :to-ib   format-ib-time
                                         :from-ib parse-ib-time}}
-   #:iboga.req.ids
-   {:num-ids {:default-value 1}} 
-   
    #:iboga.req.historical-data
-   {:end           {:spec       (s/nilable local-date-time?)
-                    :default-fn (fn [argmap]
-                                  (when-not (:iboga.req.historical-data/update? argmap)
-                                    (LocalDateTime/now)))
-                    :to-ib      #(when % (format-ib-time %))}
-    :duration      {:spec       #(re-find #"[0-9]+ [SDWMY]" %)
-                    :default-fn #(default-duration (:iboga.req.historical-data/bar-size %))}
-    :bar-size      {:spec :iboga.enum/bar-size :default-value "1 day"}
-    :show          {:spec :iboga.enum/show :default-value "TRADES"}
-    :format-date   format-date
-    :rth?          rth?
-    :update?       {:default-value false}
-    :chart-options {:default-value []}}
+   {:end         {:spec  (s/nilable local-date-time?)
+                  :to-ib #(when % (format-ib-time %))}
+    :duration    {:spec #(re-find #"[0-9]+ [SDWMY]" %)}
+    :bar-size    {:spec :iboga.enum/bar-size}
+    :show        {:spec :iboga.enum/show}
+    :format-date format-date
+    :rth?        rth?}
    
    #:iboga.req.head-timestamp
-   {:show        {:spec          :iboga.enum/show
-                  :default-value "TRADES"}
+   {:show        {:spec :iboga.enum/show}
     :format-date format-date
     :rth?        rth?}
 
@@ -122,3 +112,38 @@
     :trading-hours   {:from-ib parse-contract-hours}
     :valid-exchanges {:from-ib #(set (str/split % #","))}
     :order-types     {:from-ib #(set (str/split % #","))}}))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;request defaults;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn default-duration [bar-size]
+  (if (#{"1 day" "1 week" "1 month"} bar-size)
+    "1 Y"
+    "1 D"))
+
+(def defaults
+  {:historical-data {:default-vals {:show          "TRADES"
+                                    :chart-options []
+                                    :bar-size      "1 day"
+                                    :format-date   1
+                                    :rth?          true
+                                    :update?       false}
+                     :default-fn   (fn [argmap]
+                                     (cond-> {}
+                                       (and (not (contains? argmap :end))
+                                            (not (:update? argmap)))
+                                       (assoc :end (LocalDateTime/now))
+                                       
+                                       (not (contains? argmap :duration))
+                                       (assoc :duration (default-duration (:bar-size argmap)))
+                                       
+                                       true (merge argmap)))}
+   :head-timestamp {:default-vals {:format-date 1
+                                   :show        "TRADES"
+                                   :rth?        true}}
+   :ids            {:default-vals {:num-ids 1}}})
+
+

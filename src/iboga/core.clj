@@ -10,6 +10,8 @@
 ;;util;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn unqualify [k] (keyword (name k)))
+
 (defn qualify-key [parent k]
   (keyword (str (namespace parent) "." (name parent)) (name k)))
 
@@ -39,30 +41,15 @@
 ;;defaults;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn add-default-values [req-key argmap]
-  (reduce
-   (fn [m k]
-     (let [missing? (not (contains? m k))
-           dflt     (get-default-value k)]
-       (cond-> m
-         (and missing? (some? dflt)) (assoc k dflt))))
-   argmap
-   (meta/req-key->field-keys req-key)))
+(defn add-defaults [req-key argmap]
+  (let [dflt-vals (get-in impl/defaults [req-key :default-vals] {})
+        dflt-fn   (get-in impl/defaults [req-key :default-fn])]
+    (cond-> (merge dflt-vals argmap)
+      dflt-fn dflt-fn)))
 
-(defn add-default-fns [req-key argmap]
-  (reduce
-   (fn [m k]
-     (let [missing? (not (contains? m k))
-           dflt-fn  (get-default-fn k)]
-       (cond-> m
-         (and missing? dflt-fn) (assoc k (dflt-fn argmap)))))
-   argmap
-   (meta/req-key->field-keys req-key)))
-
-(defn optional? [arg]
-  (boolean
-   (or (contains-default-value? arg)
-       (get-default-fn arg))))
+(defn optional? [req-key param-key]
+  ;;could pre-generate add-defaults for empty map for each req
+  (contains? (add-defaults req-key {}) param-key))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;specs;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -95,15 +82,17 @@
 (defn def-struct-specs []
   (doseq [[k fields] meta/struct-key->field-keys]
     (let [fields (vec fields)]
-      (eval `(s/def ~k (s/keys :opt ~fields))))))
+      (eval `(s/def ~k (s/keys :opt-un ~fields))))))
 
 (defn def-req-specs []
   (doseq [[req-key params] meta/req-key->field-keys]
     (let [{opt true
-           req false} (group-by optional? params)]
+           req false} (group-by #(optional? (unqualify req-key)
+                                            (unqualify %))
+                                params)]
       (eval `(s/def ~req-key
-               (s/keys ~@(when (not-empty opt) [:opt opt])
-                       ~@(when (not-empty req) [:req req])))))))
+               (s/keys ~@(when (not-empty opt) [:opt-un opt])
+                       ~@(when (not-empty req) [:req-un req])))))))
 
 (defn def-schema-specs []
   (doseq [[k {:keys [spec]}] @schema]
@@ -216,8 +205,6 @@
        (m/map-entry k v)))
    m))
 
-(defn unqualify [k] (keyword (name k)))
-
 ;;doesn't currently handle nested sequences
 (defn unqualify-map [m]
   (m/map-kv
@@ -299,6 +286,12 @@
 ;;req;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(def req-params
+  (->> meta/req-key->fields
+       (map (fn [[k v]]
+              [(unqualify k) (mapv (comp unqualify :spec-key) v)]))
+       (into {})))
+
 (defn req-spec-key [k & [arg]]
   (if arg
     (qualify-key (req-spec-key k) arg)
@@ -308,7 +301,7 @@
   (mapv argmap (meta/req-key->field-keys req-key)))
 
 (defn arglist->argmap [req-key arglist]
-  (zipmap (meta/req-key->field-keys req-key) arglist))
+  (zipmap (req-params req-key) arglist))
 
 (def validate? (atom true))
 
@@ -318,9 +311,18 @@
   (when-not (s/valid? k args)
     (throw (Exception. (ex-info "Invalid request" (s/explain-data k args))))))
 
+(defn normalize [req-key args]
+  (let [argmap (cond->> args (vector? args) (arglist->argmap req-key))
+        argmap (add-defaults req-key argmap)]
+    (when @validate?
+      (assert-valid-req (req-spec-key req-key) argmap))
+    argmap))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;req transformers;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn normalize-req [[req-key args :as request]]
+  (update request 1 #(normalize req-key %)))
 
 (defn qualify-req-key [req]
   (update req 0 req-spec-key))
@@ -332,16 +334,6 @@
 (defn ensure-qualified-argmap [[req-key args :as req]]
   ;;(assert (map? args))
   (update req 1 #(qualify-map req-key %)))
-
-(defn merge-default-args [[req-key argmap :as req]]
-  (update req 1 #(->> %
-                      (add-default-values req-key)
-                      (add-default-fns req-key))))
-
-(defn maybe-validate [[req-key qmap :as req]]
-  (when @validate?
-    (assert-valid-req req-key qmap))
-  req)
 
 (defn args-to-ib [[req-key qmap :as req]]
   (update req 1 to-ib))
@@ -356,16 +348,10 @@
 (defn invoke-req [ecs [method-str args]]
   (invoke ecs method-str args))
 
-(defn qify [request]
+(defn req* [conn request]
   (->> request
        qualify-req-key
-       ensure-argmap
        ensure-qualified-argmap
-       merge-default-args
-       maybe-validate))
-
-(defn req* [conn qreq]
-  (->> qreq
        args-to-ib
        prep-ib-call
        (invoke-req (:ecs conn))))
@@ -373,7 +359,7 @@
 (defn req [conn request]
   (if-not (connected? conn)
     (throw (Exception. "Not connected"))
-    (req* conn (qify request))))
+    (req* conn (normalize-req request))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
