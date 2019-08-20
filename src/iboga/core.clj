@@ -311,55 +311,72 @@
   (when-not (s/valid? k args)
     (throw (Exception. (ex-info "Invalid request" (s/explain-data k args))))))
 
-(defn normalize [req-key args]
-  (let [argmap (cond->> args (vector? args) (arglist->argmap req-key))
-        argmap (add-defaults req-key argmap)]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;req ctx;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn req-ctx [conn [req-key args :as input]]
+  {:conn    conn
+   :req-key req-key
+   :args    args
+   :input   input})
+
+(defn maybe-validate [{:keys [req-key args] :as ctx}]
+  (when @validate?
+    (assert-valid-req (req-spec-key req-key) args)
+    ctx))
+
+(defn prep-req [{:keys [req-key args] :as ctx}]
+  (-> ctx
+      (cond-> (vector? args) (update :args #(arglist->argmap req-key %)))
+      (update :args #(add-defaults req-key %))
+      maybe-validate))
+
+(defn send-req [{:keys [conn req-key args] :as ctx}]
+  (let [spec-key (req-spec-key req-key)
+        ;;these two steps should be combined:
+        qargs    (qualify-map spec-key args)
+        ib-args  (to-ib qargs)]
+    (invoke (:ecs conn)
+            (meta/msg-key->ib-name spec-key)
+            (argmap->arglist spec-key ib-args))
+    ctx))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;middleware;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn wrap-ensure-argmap [handler]
+  (fn [{:keys [args req-key] :as ctx}]
+    (handler
+     (cond-> ctx
+       (vector? args) (update :args #(arglist->argmap req-key %))))))
+
+(defn wrap-add-default-args [handler]
+  (fn [ctx]
+    (handler
+     (update ctx :args #(add-defaults (:req-key ctx) %)))))
+
+(defn wrap-maybe-validate [handler]
+  (fn [{:keys [req-key args] :as ctx}]
     (when @validate?
-      (assert-valid-req (req-spec-key req-key) argmap))
-    argmap))
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;req transformers;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+      (assert-valid-req (req-spec-key req-key) args)
+      (handler ctx))))
 
-(defn normalize-req [[req-key args :as request]]
-  (update request 1 #(normalize req-key %)))
-
-(defn qualify-req-key [req]
-  (update req 0 req-spec-key))
-
-(defn ensure-argmap [[req-key args :as request]]
-  (cond-> request
-    (vector? args) (update 1 #(arglist->argmap req-key %))))
-
-(defn ensure-qualified-argmap [[req-key args :as req]]
-  ;;(assert (map? args))
-  (update req 1 #(qualify-map req-key %)))
-
-(defn args-to-ib [[req-key qmap :as req]]
-  (update req 1 to-ib))
-
-(defn prep-ib-call [[req-key qmap :as req]]
-  (-> req
-      (update 0 meta/msg-key->ib-name)
-      (update 1 #(argmap->arglist req-key %))))
+(defn wrap-default-middleware [handler]
+  (-> handler
+      wrap-maybe-validate
+      wrap-add-default-args
+      wrap-ensure-argmap))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn invoke-req [ecs [method-str args]]
-  (invoke ecs method-str args))
-
-(defn req* [conn request]
-  (->> request
-       qualify-req-key
-       ensure-qualified-argmap
-       args-to-ib
-       prep-ib-call
-       (invoke-req (:ecs conn))))
-
-(defn req [conn request]
+(defn req [conn request & [middleware]]
   (if-not (connected? conn)
     (throw (Exception. "Not connected"))
-    (req* conn (normalize-req request))))
+    (let [middleware ((or middleware wrap-default-middleware) send-req)]
+      (middleware
+       (req-ctx conn request)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
