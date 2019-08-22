@@ -3,7 +3,9 @@
             [medley.core :as m]))
 
 (defn mkadder
-  "Returns a function which, given a value, adds that value the the atom a with the reducing function rf. If the result is reduced, deliver the dereferenced result to promise p."
+  "Returns a function which, given a value, adds that value the the atom
+  a with the reducing function rf. If the result is reduced, deliver
+  the dereferenced result to promise p."
   [a p rf]
   (fn [x]
     (let [result (rf a x)]
@@ -13,7 +15,7 @@
       result)))
 
 (defn acc
-  "Accumulates state in an atom subject to a transducer. returns a map
+  "Accumulates state in an atom subject to a transducer. Returns a map
   with the keys :add!, :a and :p. Use the :add! function to add
   state. :p is a promise which will be delivered the state in a when
   rf is realized"
@@ -25,117 +27,156 @@
          p       (promise)]
      {:add! (mkadder a p rf) :a a :p p})))
 
+;;payload/taker could have special meansings for keyword
+;;(ie keep key for payload and take until keyword msg-key for taker)
+;;taker could also have an interger for take x, though that would usually be one?
+;;todo: rename to clarify what should be a xf and what isn't?
+(def req-helpers
+  {:historical-data
+   {:taker   (fn [{:keys [args] :as ctx}]
+               ;;todo: if update is true, should probably just return nil as there
+               ;;is no longer a valid sync request
+               (m/take-upto
+                (fn [[msg-key msg]]
+                  (if (:update? args)
+                    (and (= msg-key :error)
+                         (:error-msg msg)
+                         (.contains (:error-msg msg) "API historical data query cancelled"))
+                    (= msg-key :historical-data-end)))))
+    :payload (fn [_ctx] (keep (comp :bar second)))}
+
+
+   :contract-details
+   {:taker   (fn [{:keys [req-id args]}]
+               (m/take-upto
+                (fn [[msg-key msg]]
+                  ;;error?
+                  (= msg-key :contract-details-end))))
+    :payload (fn [_ctx] (keep (comp :contract-details second)))}
+
+   :head-timestamp
+   {:taker (fn [_ctx] (take 1))
+    :payload (fn [_ctx] (keep (comp :head-timestamp second)))
+    :cleanup (fn [{:keys [conn req-key args]}]
+
+               ;;head-timestamp needs to be cancelled or else the id cannot be
+               ;;used again. This is unlike details/history which free the id
+               ;;after results. Probably a bug in IB's api server.
+               (req conn [:cancel-head-timestamp {:id (:id args)}]))}})
+
 (defn id-filterer [{:keys [req-key args] :as ctx}]
-  (filter (fn [[msg-key msg]] (= (:id args) (:id msg)))))
+  (filter (fn [[msg-key msg]]
+            (= (:id args) (:id msg)))))
 
-(defmulti filterer
-  "Takes a qualified request and returns a transducer which filters
-  incoming messages to respond to for that request"
-  (fn [ctx] (:req-key ctx)))
+(defn filterer [{:keys [req-key args] :as ctx}]
+  (let [f (get-in req-helpers [req-key :filterer])]
+    (cond
+      f          (f ctx)
+      (:id args) (id-filterer ctx))))
 
-(defmulti taker
-  "Takes a qualified request and returns a transducers which 'takes'
-  incoming messages to respond to for that request. Should return a reduced value"
-  (fn [ctx] (:req-key ctx)))
+(defn taker [{:keys [req-key] :as ctx}]
+  (let [f (get-in req-helpers [req-key :taker])]
+    (when f (f ctx))))
 
-(defmulti cleanup
-  "Cleanup code to run after request has been 'finished'"
-  (fn [{:keys [conn req-key args]}] req-key))
+(defn synchronizer
+  "Given a requst ctx, returns a transducer which filters appropriate
+  responses and is reduced upon the responses indicating completion"
+  [ctx]
+  (let [fil (filterer ctx)
+        tak (taker ctx)
+        _   (assert (and fil tak)
+                    (str "sync-req not available for " ctx))]
+    (comp fil tak)))
 
-(defmethod filterer :default [ctx] nil)
+(defn cleanup
+  "Given a context, calls the :cleanup functions for that context"
+  [ctx]
+  (when-let [f (get-in req-helpers [(:req-key ctx) :cleanup])]
+    (f ctx)))
 
-(defmethod taker :default [ctx] nil)
+(defn payload
+  "Given a ctx, returns a transducer which gets only the 'data payload'
+  for the request type and context"
+  [ctx]
+  (when-let [f (get-in req-helpers [(:req-key ctx) :payload] ctx)]
+    (f ctx)))
 
-(defmethod cleanup :default [ctx] nil)
+(defn comp-response-xf
+  "Given a context and a function which takes a context and returns a
+  transducer, calls `comp` on current :response-xf of the context and
+  the returned transducer, or sets response-xf if it doesn't yet
+  exist. A 'response-xf' describes the transformation of a stream of all
+  received messages to a response"
+  [{:keys [response-xf] :as ctx} xf-fn]
+  (let [xf        (xf-fn ctx)
+        response-xf (if response-xf (comp response-xf xf) xf)]
+    (assoc ctx :response-xf response-xf)))
 
-;;note the awkwardness here: things on the request side are qualified keys but
-;;messages coming in are all unqualified. This is because we're using the
-;;regular handler system which unqualifies everything for ease of use.
+(defn sync-response [{:keys [response-xf] :as ctx}]
+  (comp-response-xf ctx synchronizer))
 
-(defmethod filterer :historical-data [ctx]
-  (id-filterer ctx))
+(defn payload-response [{:keys [req-key response-xf] :as ctx}]
+  ;;TODO: handle case where no f exists, just abort 
+  (let [f (get-in req-helpers [req-key :payload] ctx)]
+    (if f
+      (comp-response-xf ctx f)
+      ctx)))
 
-(defmethod taker :historical-data [{:keys [req-id args]}]
-  (m/take-upto
-   (fn [[msg-key msg]]
-     (if (:update? args)
-       (and (= msg-key :error)
-            (:error-msg msg)
-            (.contains (:error-msg msg) "API historical data query cancelled"))
-       (= msg-key :historical-data-end)))))
+(defn on-realized-response [{:keys [response-atom response-prom] :as ctx} f]
+  (add-watch response-atom (gensym)
+             (fn [k r o n]
+               (when (realized? response-prom)
+                 (f ctx)
+                 (remove-watch r k))))
+  ctx)
 
-(defmethod taker :contract-details [{:keys [req-id args]}]
-  (m/take-upto
-   (fn [[msg-key msg]]
-     ;;error?
-     (= msg-key :contract-details-end))))
+(defn acc-response [{:keys [conn response-xf] :as ctx}]
 
-(defmethod filterer :contract-details [ctx]
-  (id-filterer ctx))
+  (let [{:keys [add! p a]} (acc response-xf conj)
+        h                  (fn [msg] (add! msg))
 
-(defmethod filterer :head-timestamp [ctx]
-  (id-filterer ctx))
-
-(defmethod taker :head-timestamp [{:keys [req-key args]}]
-  (take 1))
-
-(defmethod cleanup :head-timestamp [{:keys [conn req-key args]}]
-  (req conn [:cancel-head-timestamp {:id (:id args)}]))
-
-(defn add-id [args id]
-    (if (vector? args)
-      (into [id] args)
-      (assoc args :id id)))
-
-(def ^:dynamic *timeout* 2000)
-
-;;TODO: error handling
-
-
-(defn sync-enter [{:keys [conn req-key args] :as ctx}]
-  (let [fil              (filterer ctx)
-        tak              (taker ctx)
-        _                (assert (and fil tak)
-                                 (str "sync-req not available for " ctx))
-        xf               (comp fil tak)
-        {:keys [add! p]} (acc xf conj)
-        h                (fn [msg] (add! msg))]
+        ctx (assoc ctx :response-prom p :response-atom a)]
     (add-handler conn h)
-    (assoc ctx
-           :result-prom p
-           :sync-handler h)))
+    (on-realized-response ctx (fn [_] (println "removing handler") (remove-handler conn h)))
+    (on-realized-response ctx (fn [ctx] (println "cleanup") (cleanup ctx)))
+    ctx))
 
-(defn sync-leave [{:keys [conn req-key args result-prom sync-handler] :as ctx}]
-  (let [result (deref result-prom *timeout* ::timeout)]
-    (when (= result ::timeout)
-      (throw (ex-info "sync-req timeout" args)))
-    (remove-handler conn sync-handler)
-    (cleanup ctx)
-    (assoc ctx :result result)))
+(defn add-id* [args id]
+  (if (vector? args)
+    (into [id] args)
+    (assoc args :id id)))
 
-(defn wrap-sync [handler]
-  (fn [ctx]
-    (sync-leave (handler (sync-enter ctx)))))
+(defn add-id [{:keys [conn args] :as ctx}]
+  (let [id (next-id conn)]
+    (update ctx :args add-id* id)))
+
 
 (comment
-  (defn sync-middleware [handler]
-    (-> handler wrap-sync wrap-default-middleware))
 
-  (def SPY {:local-symbol "SPY" :sec-type "STK" :exchange "SMART" :currency "USD"})
+ (def SPY {:local-symbol "SPY" :sec-type "STK" :exchange "SMART" :currency "USD"})
 
-  (def historical
-    (:result
-     (req conn [:historical-data [1 SPY]] sync-middleware)))
+ (def log (atom []))
 
-  (def details
-    (:result
-     (req conn [:contract-details [1 SPY]] sync-middleware)))
+ (def conn (ib/client (fn [msg] (swap! log conj msg))))
 
-  (def head-ts
-    (:result
-     (req conn [:head-timestamp [1 SPY]] sync-middleware))))
+ (ib/connect conn "localhost" 7497)
 
-;;(sync-req conn [:historical-data [TSLA]] {:auto-id true})
-;;(sync-req conn [:head-timestamp [1234 TSLA]])
-;;(sync-req conn [:contract-details [123 TSLA]])
+ (defn smart-req [conn req]
+   (-> (req-ctx conn req)
+       add-id          ;;force-adds an id to a request
+       prep-req        ;;standard core prep
+       sync-response   ;;synchronous response
+       payload-response ;;only return payloads
+       acc-response     ;;accumulator for responses
+       send-req         ;;send request
+       :response-prom
+       deref))  
 
+
+ (smart-req conn [:historical-data [SPY]])
+
+ (smart-req conn [:contract-details [SPY]])
+
+ ;;note: returns vector of results even though it will only ever be one result 
+ (smart-req conn [:head-timestamp [SPY]])
+ )

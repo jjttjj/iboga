@@ -321,20 +321,26 @@
    :args    args
    :input   input})
 
+(defn assert-connected [{:keys [conn] :as ctx}]
+  (when-not (connected? conn)
+    (throw (Exception. "Not connected")))
+  ctx)
+
 (defn maybe-validate [{:keys [req-key args] :as ctx}]
   (when @validate?
     (assert-valid-req (req-spec-key req-key) args)
     ctx))
 
-(defn prep-req [{:keys [req-key args] :as ctx}]
-  (-> ctx
-      (cond-> (vector? args) (update :args #(arglist->argmap req-key %)))
-      (update :args #(add-defaults req-key %))
-      maybe-validate))
+(defn ensure-argmap [{:keys [args req-key] :as ctx}]
+  (cond-> ctx
+    (vector? args) (update :args #(arglist->argmap req-key %))))
+
+(defn add-default-args [ctx]
+  (update ctx :args #(add-defaults (:req-key ctx) %)))
 
 (defn send-req [{:keys [conn req-key args] :as ctx}]
   (let [spec-key (req-spec-key req-key)
-        ;;these two steps should be combined:
+        ;;these two steps can/should be combined:
         qargs    (qualify-map spec-key args)
         ib-args  (to-ib qargs)]
     (invoke (:ecs conn)
@@ -342,41 +348,20 @@
             (argmap->arglist spec-key ib-args))
     ctx))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;middleware;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defn prep-req [ctx]
+  (-> ctx
+      assert-connected
+      ensure-argmap
+      add-default-args
+      maybe-validate))
 
-(defn wrap-ensure-argmap [handler]
-  (fn [{:keys [args req-key] :as ctx}]
-    (handler
-     (cond-> ctx
-       (vector? args) (update :args #(arglist->argmap req-key %))))))
-
-(defn wrap-add-default-args [handler]
-  (fn [ctx]
-    (handler
-     (update ctx :args #(add-defaults (:req-key ctx) %)))))
-
-(defn wrap-maybe-validate [handler]
-  (fn [{:keys [req-key args] :as ctx}]
-    (when @validate?
-      (assert-valid-req (req-spec-key req-key) args)
-      (handler ctx))))
-
-(defn wrap-default-middleware [handler]
-  (-> handler
-      wrap-maybe-validate
-      wrap-add-default-args
-      wrap-ensure-argmap))
+(defn default-req-handler [ctx]
+  (-> ctx prep-req send-req))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn req [conn request & [middleware]]
-  (if-not (connected? conn)
-    (throw (Exception. "Not connected"))
-    (let [middleware ((or middleware wrap-default-middleware) send-req)]
-      (middleware
-       (req-ctx conn request)))))
+(defn req [conn request]
+  (default-req-handler (req-ctx conn request)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
