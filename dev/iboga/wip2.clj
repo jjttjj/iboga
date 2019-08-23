@@ -3,50 +3,51 @@
             [medley.core :as m]
             [clojure.tools.logging :as log]))
 
-(defn mkputter
-  "Returns a function which, given a value, adds that value the the atom
-  a with the reducing function rf. If the result is reduced, deliver
-  the dereferenced result to promise p."
-  [a p rf]
+;;consider: what to return from put; should it indicate change from unrealized
+;;to realized? or is just true/false sufficient
+;;is there a better name than put!
+
+(defn mkput [a p rf cbs]
   (fn [x]
-    (let [result (rf a x)]
-      (when (reduced? result)
-        (deliver p @@result))
-      result)))
+    (if (realized? p)
+      false
+      (let [result (rf a x)]
+        (if (reduced? result)
+          (let [x @@result]
+            ;;run callbacks then deliver
+            (doseq [cb @cbs] (cb x))
+            (deliver p x))
+          result)
+        true))))
 
 (defn acc
-  "Accumulates state in an atom subject to a transducer. Returns a map
-  with the keys :put!, :a and :p. Use the :put! function to add
-  state. :p is a promise which will be delivered the state in a when
-  rf is realized"
+  "Accumulates state in an atom subject to a transducer
+  Returns a map with the keys :put!, :register-cb, :a and :p.
+  :put! is a function which adds its single argument to atom with rf
+  subject to xf.
+  :p is a promise which will be delivered the state in :a when rf
+  results in a 'reduced'. Before p is realized, all callbacks will be
+  called with the final value in :a "
   ([xf rf] (acc xf rf (rf)))
   ([xf rf init]
    (let [a       (atom init)
          swapper (fn [acc x] (swap! acc rf x) acc)
          rf      (xf swapper)
-         p       (promise)]
-     {:_put! (mkputter a p rf) :a a :p p})))
+         p       (promise)
+         cbs     (atom [])]
+     {:a           a
+      :p           p
+      :put!        (mkput a p rf cbs)
+      :register-cb (fn [f]
+                     (assert (not (realized? p)) "Promise is already realized")
+                     (swap! cbs conj f))})))
 
-(defprotocol IPut
-  (put! [this x]))
+(defn put! [this x] ((:put! this) x))
 
-(defprotocol ICallback
-  (on-realized [this f]))
+(defn on-realized [this f]
+  ((:register-cb this) f))
 
-(defrecord AccProm [a p _put! cbs]
-  IPut
-  (put! [this x]
-    (let [result (_put! x)]
-      (if (reduced? result)
-        (let [x @@result]
-          (doseq [cb @cbs]
-            (cb x)))
-        result)
-      nil))
-  ICallback
-  (on-realized [this f]
-    (assert (not (realized? p)))
-    (swap! cbs conj f))
+(defrecord AccProm [a p]
   clojure.lang.IDeref
   (deref [this]
     (deref p))
@@ -57,13 +58,22 @@
 (defn acc-prom
   ([xf rf] (acc-prom xf rf (rf)))
   ([xf rf init]
-   (map->AccProm (assoc (acc xf rf init) :cbs (atom [])))))
+   (map->AccProm (acc xf rf init))))
 
-;;todo: fill out protocols, see clojure.core/promise
-;;todo: AccAtom for non-sync responses.
+(defrecord AccAtom [a p]
+  clojure.lang.IDeref
+  (deref [this]
+    (deref a)))
+
+(defn acc-atom
+  ([xf rf] (acc-prom xf rf (rf)))
+  ([xf rf init]
+   (map->AccAtom (acc xf rf init))))
 
 
-;;payload/taker could have special meansings for keyword
+;;todo: consider filling out protocols, see clojure.core/promise, atom
+
+;;payload/taker could have special meanings for keyword
 ;;(ie keep key for payload and take until keyword msg-key for taker)
 ;;taker could also have an interger for take x, though that would usually be one?
 ;;todo: rename to clarify what should be a xf and what isn't?
