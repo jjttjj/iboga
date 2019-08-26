@@ -2,7 +2,7 @@
   (:require [iboga.core :as ib :refer :all]
             [medley.core :as m]
             [clojure.tools.logging :as log]
-            [iboga.acc :refer [acc-prom]]))
+            [iboga.acc :as acc]))
 
 ;;payload/taker could have special meanings for keyword
 ;;(ie keep key for payload and take until keyword msg-key for taker)
@@ -98,24 +98,31 @@
       (comp-response-xf ctx f)
       ctx)))
 
+(defn add-response-callback [ctx f]
+  (update ctx :response-cbs (fnil conj []) f))
 
+(defn run-response-callbacks [{:keys [response-prom response-cbs] :as ctx}]
+  (let [response @response-prom] ;;todo: error timeout
+    (doseq [cb response-cbs]
+      (cb response))
+    (dissoc ctx :response-cbs)))
 
 (defn acc-response [{:keys [conn response-xf] :as ctx}]
-  (let [accp (acc-prom response-xf conj)
-        h    (fn [msg] (put! accp msg))
+  (let [accp (acc/acc-prom response-xf conj)
+        h    (fn [msg] (acc/put! accp msg))
 
         ctx (assoc ctx :response-prom accp)]
     (add-handler conn h)
-    (on-realized accp (fn [_result]
-                        (log/trace "removing handler")
-                        (remove-handler conn h)))
+    (-> ctx
+        (add-response-callback
+         (fn [_result]
+           (log/trace "removing handler")
+           (remove-handler conn h)))
 
-    ;;on-realization, cleanup will be passed the ctx as it was at this point
-    ;;will this always be sufficient?
-    (on-realized accp (fn [_result]
-                        (log/trace "cleanup")
-                        (cleanup ctx)))
-    ctx))
+        (add-response-callback
+         (fn [_result]
+           (log/trace "cleanup")
+           (cleanup ctx))))))
 
 (defn add-id* [args id]
   (if (vector? args)
@@ -145,6 +152,7 @@
         payload-response ;;only return payloads
         acc-response     ;;accumulator for responses
         send-req         ;;send request
+        run-response-callbacks
         :response-prom
         deref))  
 
