@@ -1,18 +1,24 @@
 (ns iboga.acc)
 
-(defn mkput [a p rf cbs]
+(defn mkput [a p rf]
   (fn [x]
-    (locking p
-      (if (realized? p)
-        false
-        (let [result (rf a x)]
-          (if (reduced? result)
-            (let [x @@result]
-              ;;run callbacks then deliver
-              (doseq [cb @cbs] (cb x))
-              (deliver p x))
-            result)
-          true)))))
+    (if (realized? p)
+      false
+      (let [result (rf a x)]
+        (if (reduced? result)
+          (deliver p @@result)
+          result)
+        true))))
+
+(defn mkput [a p rf]
+  (fn [x]
+    (if (realized? p)
+      false
+      (let [result (rf a x)]
+        (if (reduced? result)
+          (deliver p @@result)
+          result)
+        true))))
 
 (defn acc
   "Accumulates state in an atom subject to a transducer
@@ -31,10 +37,7 @@
          cbs     (atom [])]
      {:a           a
       :p           p
-      :put!        (mkput a p rf cbs)
-      :register-cb (fn [f]
-                     (assert (not (realized? p)) "Promise is already realized")
-                     (swap! cbs conj f))})))
+      :put!        (mkput a p rf)})))
 
 (defn put!
   "put! a value into an `acc` subject to its transduer. Returns false if
@@ -42,9 +45,6 @@
   returns true"
   [this x]
   ((:put! this) x))
-
-(defn on-realized [this f]
-  ((:register-cb this) f))
 
 (defrecord AccProm [a p register-cb put!]
   clojure.lang.IDeref
