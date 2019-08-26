@@ -1,77 +1,8 @@
 (ns iboga.wip2
   (:require [iboga.core :as ib :refer :all]
             [medley.core :as m]
-            [clojure.tools.logging :as log]))
-
-;;consider: what to return from put; should it indicate change from unrealized
-;;to realized? or is just true/false sufficient
-;;is there a better name than put!
-
-(defn mkput [a p rf cbs]
-  (fn [x]
-    (if (realized? p)
-      false
-      (let [result (rf a x)]
-        (if (reduced? result)
-          (let [x @@result]
-            ;;run callbacks then deliver
-            (doseq [cb @cbs] (cb x))
-            (deliver p x))
-          result)
-        true))))
-
-(defn acc
-  "Accumulates state in an atom subject to a transducer
-  Returns a map with the keys :put!, :register-cb, :a and :p.
-  :put! is a function which adds its single argument to atom with rf
-  subject to xf.
-  :p is a promise which will be delivered the state in :a when rf
-  results in a 'reduced'. Before p is realized, all callbacks will be
-  called with the final value in :a "
-  ([xf rf] (acc xf rf (rf)))
-  ([xf rf init]
-   (let [a       (atom init)
-         swapper (fn [acc x] (swap! acc rf x) acc)
-         rf      (xf swapper)
-         p       (promise)
-         cbs     (atom [])]
-     {:a           a
-      :p           p
-      :put!        (mkput a p rf cbs)
-      :register-cb (fn [f]
-                     (assert (not (realized? p)) "Promise is already realized")
-                     (swap! cbs conj f))})))
-
-(defn put! [this x] ((:put! this) x))
-
-(defn on-realized [this f]
-  ((:register-cb this) f))
-
-(defrecord AccProm [a p]
-  clojure.lang.IDeref
-  (deref [this]
-    (deref p))
-  clojure.lang.IBlockingDeref
-  (deref [this timeout-ms timeout-val]
-    (deref p timeout-ms timeout-val)))
-
-(defn acc-prom
-  ([xf rf] (acc-prom xf rf (rf)))
-  ([xf rf init]
-   (map->AccProm (acc xf rf init))))
-
-(defrecord AccAtom [a p]
-  clojure.lang.IDeref
-  (deref [this]
-    (deref a)))
-
-(defn acc-atom
-  ([xf rf] (acc-prom xf rf (rf)))
-  ([xf rf init]
-   (map->AccAtom (acc xf rf init))))
-
-
-;;todo: consider filling out protocols, see clojure.core/promise, atom
+            [clojure.tools.logging :as log]
+            [iboga.acc :refer [acc-prom]]))
 
 ;;payload/taker could have special meanings for keyword
 ;;(ie keep key for payload and take until keyword msg-key for taker)
@@ -167,19 +98,21 @@
       (comp-response-xf ctx f)
       ctx)))
 
+
+
 (defn acc-response [{:keys [conn response-xf] :as ctx}]
   (let [accp (acc-prom response-xf conj)
         h    (fn [msg] (put! accp msg))
 
         ctx (assoc ctx :response-prom accp)]
     (add-handler conn h)
-    (on-realized accp (fn [_]
+    (on-realized accp (fn [_result]
                         (log/trace "removing handler")
                         (remove-handler conn h)))
 
     ;;on-realization, cleanup will be passed the ctx as it was at this point
     ;;will this always be sufficient?
-    (on-realized accp (fn [_]
+    (on-realized accp (fn [_result]
                         (log/trace "cleanup")
                         (cleanup ctx)))
     ctx))
