@@ -10,16 +10,6 @@
           result)
         true))))
 
-(defn mkput [a p rf]
-  (fn [x]
-    (if (realized? p)
-      false
-      (let [result (rf a x)]
-        (if (reduced? result)
-          (deliver p @@result)
-          result)
-        true))))
-
 (defn acc
   "Accumulates state in an atom subject to a transducer
   Returns a map with the keys :put!, :register-cb, :a and :p.
