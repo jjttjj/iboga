@@ -1,9 +1,12 @@
 {:deps
- {org.clojure/clojure            {:mvn/version "1.10.1"}
-  medley                         {:mvn/version "1.2.0"}
-  org.clojure/tools.logging      {:mvn/version "0.5.0"}
-  camel-snake-kebab              {:mvn/version "0.4.0"}
-  com.interactivebrokers/tws-api {:mvn/version "9.73.01-SNAPSHOT"}}
+ {org.clojure/clojure              {:mvn/version "1.10.1"}
+  medley                           {:mvn/version "1.2.0"}
+  org.clojure/tools.logging        {:mvn/version "0.5.0"}
+  camel-snake-kebab                {:mvn/version "0.4.0"}
+  com.interactivebrokers/tws-api   {:mvn/version "9.73.01-SNAPSHOT"}
+  org.clojure/core.async           {:mvn/version "0.4.500"}
+  io.pedestal/pedestal.interceptor {:mvn/version "0.5.7"}
+  }
 
  :aliases {:dev {:extra-paths ["dev"]}}
  

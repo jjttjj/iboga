@@ -2,7 +2,7 @@
   (:require [iboga.core :as ib :refer :all]
             [medley.core :as m]
             [clojure.tools.logging :as log]
-            [iboga.acc :as acc]))
+            [clojure.core.async :as a]))
 
 ;;payload/taker could have special meanings for keyword
 ;;(ie keep key for payload and take until keyword msg-key for taker)
@@ -83,37 +83,38 @@
   the returned transducer, or sets response-xf if it doesn't yet
   exist. A 'response-xf' describes the transformation of a stream of all
   received messages to a response"
-  [{:keys [response-xf] :as ctx} xf-fn]
-  (let [xf          (xf-fn ctx)
-        response-xf (if response-xf (comp response-xf xf) xf)]
+  [{:keys [response-xf] :as ctx} xf]
+  (let [response-xf (if response-xf (comp response-xf xf) xf)]
     (assoc ctx :response-xf response-xf)))
 
-(defn sync-response [{:keys [response-xf] :as ctx}]
-  (comp-response-xf ctx synchronizer))
+(defn sync-response [ctx]
+  (comp-response-xf ctx (synchronizer ctx)))
 
-(defn payload-response [{:keys [req-key response-xf] :as ctx}]
-  ;;TODO: handle case where no f exists, just abort 
-  (let [f (get-in req-helpers [req-key :payload] ctx)]
-    (if f
-      (comp-response-xf ctx f)
+(defn payload-response [{:keys [req-key] :as ctx}]
+  (let [xf-fn (get-in req-helpers [req-key :payload] ctx)]
+    (if xf-fn
+      (comp-response-xf ctx (xf-fn ctx))
       ctx)))
 
 (defn add-response-callback [ctx f]
   (update ctx :response-cbs (fnil conj []) f))
 
-(defn run-response-callbacks [{:keys [response-prom response-cbs] :as ctx}]
-  (let [response @response-prom] ;;todo: error timeout
+(defn get-response [{:keys [response-chan response-cbs] :as ctx}]
+  (let [response (a/<!! (a/into [] response-chan))] ;;todo: error timeout
     (doseq [cb response-cbs]
       (cb response))
-    (dissoc ctx :response-cbs)))
-
-(defn acc-response [{:keys [conn response-xf] :as ctx}]
-  (let [accp (acc/acc-prom response-xf conj)
-        h    (fn [msg] (acc/put! accp msg))
-
-        ctx (assoc ctx :response-prom accp)]
-    (add-handler conn h)
     (-> ctx
+        (assoc :response response)
+        (dissoc :response-cbs))))
+
+;;todo: make chan if not exists... should that be a seperate thing??
+(defn acc-response [{:keys [conn response-xf] :as ctx}]
+  (let [response-chan (a/chan 5 response-xf)
+        h    (fn [msg] (a/>!! response-chan msg))]
+    (add-handler conn h)
+
+    (-> ctx
+        (assoc :response-chan response-chan)
         (add-response-callback
          (fn [_result]
            (log/trace "removing handler")
@@ -152,7 +153,7 @@
         payload-response ;;only return payloads
         acc-response     ;;accumulator for responses
         send-req         ;;send request
-        run-response-callbacks
+        get-response
         :response-prom
         deref))  
 
