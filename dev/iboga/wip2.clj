@@ -96,34 +96,25 @@
       (comp-response-xf ctx (xf-fn ctx))
       ctx)))
 
-(defn add-response-callback [ctx f]
-  (update ctx :response-cbs (fnil conj []) f))
-
 (defn get-response [{:keys [response-chan response-cbs] :as ctx}]
   (let [response (a/<!! (a/into [] response-chan))] ;;todo: error timeout
-    (doseq [cb response-cbs]
-      (cb response))
-    (-> ctx
-        (assoc :response response)
-        (dissoc :response-cbs))))
+    (doseq [cb @response-cbs] (cb response))
+    (assoc ctx :response response)))
 
 ;;todo: make chan if not exists... should that be a seperate thing??
-(defn acc-response [{:keys [conn response-xf] :as ctx}]
+(defn chan-response [{:keys [conn response-xf] :as ctx}]
   (let [response-chan (a/chan 5 response-xf)
-        h    (fn [msg] (a/>!! response-chan msg))]
+        h    (fn [msg] (a/>!! response-chan msg))
+        response-cbs (atom [])]
     (add-handler conn h)
 
-    (-> ctx
-        (assoc :response-chan response-chan)
-        (add-response-callback
-         (fn [_result]
-           (log/trace "removing handler")
-           (remove-handler conn h)))
-
-        (add-response-callback
-         (fn [_result]
-           (log/trace "cleanup")
-           (cleanup ctx))))))
+    (swap! response-cbs conj (fn [_] (log/trace "removing handler")
+                               (remove-handler conn h)))
+    (swap! response-cbs conj (fn [_] (log/trace "cleanup")
+                               (cleanup ctx)))
+    (assoc ctx
+           :response-chan response-chan
+           :response-cbs  response-cbs)))
 
 (defn add-id* [args id]
   (if (vector? args)
