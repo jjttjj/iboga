@@ -104,7 +104,10 @@
 (def saved-names (read-string (slurp (io/resource "parameter-names.edn"))))
 
 (defn param-name [^Parameter p]
-  (get saved-names (hash p) (.getName p)))
+  (get saved-names
+       (hash p)
+       ;;for data-classes we don't need param names; default to regular .getName
+       (.getName p)))
 
 (defn probably-getter? [^Method m]
   (boolean
