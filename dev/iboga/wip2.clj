@@ -54,6 +54,12 @@
   (let [f (get-in req-helpers [req-key :taker])]
     (when f (f ctx))))
 
+;;there may be some cases where multile error messags are recieved
+;;also, errors are abused by ib for generic thigns, such as end of hist update
+;;so we can't just throw exception
+(def stop-at-error (m/take-upto (fn [[msg-key msg]]
+                                  (= :error msg-key))))
+
 (defn synchronizer
   "Given a requst ctx, returns a transducer which filters appropriate
   responses and is reduced upon the responses indicating completion"
@@ -62,7 +68,7 @@
         tak (taker ctx)
         _   (assert (and fil tak)
                     (str "sync-req not available for " ctx))]
-    (comp fil tak)))
+    (comp fil tak stop-at-error)))
 
 (defn cleanup
   "Given a context, calls the :cleanup functions for that context"
