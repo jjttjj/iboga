@@ -35,20 +35,6 @@
 (defn get-from-ib [k]       (get-in @schema [k :from-ib]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;defaults;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn add-defaults [req-key argmap]
-  (let [dflt-vals (get-in impl/defaults [req-key :default-vals] {})
-        dflt-fn   (get-in impl/defaults [req-key :default-fn])]
-    (cond-> (merge dflt-vals argmap)
-      dflt-fn dflt-fn)))
-
-(defn optional? [req-key param-key]
-  ;;could pre-generate add-defaults for empty map for each req
-  (contains? (add-defaults req-key {}) param-key))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;specs;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -83,13 +69,8 @@
 
 (defn def-req-specs []
   (doseq [[req-key params] meta/req-key->field-keys]
-    (let [{opt true
-           req false} (group-by #(optional? (unqualify req-key)
-                                            (unqualify %))
-                                params)]
-      (eval `(s/def ~req-key
-               (s/keys ~@(when (not-empty opt) [:opt-un opt])
-                       ~@(when (not-empty req) [:req-un req])))))))
+    (eval
+     `(s/def ~req-key (s/keys ~@(when (not-empty params) [:req-un params]))))))
 
 (defn def-schema-specs []
   (doseq [[k {:keys [spec]}] @schema]
@@ -332,9 +313,6 @@
   (cond-> ctx
     (vector? args) (update :args #(arglist->argmap req-key %))))
 
-(defn add-default-args [ctx]
-  (update ctx :args #(add-defaults (:req-key ctx) %)))
-
 (defn send-req [{:keys [conn req-key args] :as ctx}]
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
@@ -345,20 +323,14 @@
             (argmap->arglist spec-key ib-args))
     ctx))
 
-(defn prep-req [ctx]
-  (-> ctx
-      assert-connected
-      ensure-argmap
-      add-default-args
-      maybe-validate))
-
-(defn default-req-handler [ctx]
-  (-> ctx prep-req send-req))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn req [conn request]
-  (default-req-handler (req-ctx conn request)))
+  (-> (req-ctx conn request)
+      assert-connected
+      ensure-argmap
+      maybe-validate
+      send-req))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -107,38 +107,3 @@
     :trading-hours   {:from-ib parse-contract-hours}
     :valid-exchanges {:from-ib #(set (str/split % #","))}
     :order-types     {:from-ib #(set (str/split % #","))}}))
-
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;request defaults;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn default-duration [bar-size]
-  (if (#{"1 day" "1 week" "1 month"} bar-size)
-    "1 Y"
-    "1 D"))
-
-(def defaults
-  {:historical-data {:default-vals {:show          "TRADES"
-                                    :chart-options []
-                                    :bar-size      "1 day"
-                                    :format-date   1
-                                    :rth?          true
-                                    :update?       false}
-                     :default-fn   (fn [argmap]
-                                     (cond-> {}
-                                       (and (not (contains? argmap :end))
-                                            (not (:update? argmap)))
-                                       (assoc :end (LocalDateTime/now))
-                                       
-                                       (not (contains? argmap :duration))
-                                       (assoc :duration (default-duration (:bar-size argmap)))
-                                       
-                                       true (merge argmap)))}
-   :head-timestamp {:default-vals {:format-date 1
-                                   :show        "TRADES"
-                                   :rth?        true}}
-   :ids            {:default-vals {:num-ids 1}}})
-
-
