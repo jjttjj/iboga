@@ -30,10 +30,7 @@
   ([k attr v] (swap! schema assoc-in [k attr] v)))
 
 ;;(defn get-spec [k]          (get-in @schema [k :spec]))
-(defn get-default-value       [k] (get-in @schema [k :default-value]))
-(defn contains-default-value? [k] (contains? (get @schema k) :default-value))
 
-(defn get-default-fn [k]    (get-in @schema [k :default-fn]))
 (defn get-to-ib [k]         (get-in @schema [k :to-ib]))
 (defn get-from-ib [k]       (get-in @schema [k :from-ib]))
 
