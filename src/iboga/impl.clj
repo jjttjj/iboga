@@ -29,11 +29,6 @@
 (defn date? [x]
   (instance? LocalDate x))
 
-(defn default-duration [bar-size]
-  (if (#{"1 day" "1 week" "1 month"} bar-size)
-    "1 Y"
-    "1 D"))
-
 (s/def ::rth? boolean?)
 
 (def rth? {:spec ::rth? :to-ib bool->bit})
