@@ -19,20 +19,14 @@
   (clojure.lang.Reflector/invokeInstanceMethod obj mname (to-array args)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;schema;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;ib transformations;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def schema (atom {}))
+(defn def-to-ib   [k f] (swap! impl/schema assoc-in [k :to-ib] f))
+(defn def-from-ib [k f] (swap! impl/schema assoc-in [k :from-ib] f))
 
-(defn set-schema!
-  ([m] (reset! schema m))
-  ([k attrs] (swap! schema assoc k attrs))
-  ([k attr v] (swap! schema assoc-in [k attr] v)))
-
-;;(defn get-spec [k]          (get-in @schema [k :spec]))
-
-(defn get-to-ib [k]         (get-in @schema [k :to-ib]))
-(defn get-from-ib [k]       (get-in @schema [k :from-ib]))
+(defn get-to-ib   [k] (get-in @impl/schema [k :to-ib]))
+(defn get-from-ib [k] (get-in @impl/schema [k :from-ib]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;specs;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -72,17 +66,12 @@
     (eval
      `(s/def ~req-key (s/keys ~@(when (not-empty params) [:req-un params]))))))
 
-(defn def-schema-specs []
-  (doseq [[k {:keys [spec]}] @schema]
-    (when spec
-      (eval `(s/def ~k ~spec)))))
-
 (defn init-specs []
   (def-enum-specs)
   (def-struct-specs)
   (def-req-specs)
   (def-field-specs)
-  (def-schema-specs))
+  (impl/def-included-specs))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;transform;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -163,7 +152,6 @@
 ;;init;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(set-schema! impl/default-schema)
 (init-specs)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

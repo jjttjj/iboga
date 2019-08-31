@@ -107,3 +107,12 @@
     :trading-hours   {:from-ib parse-contract-hours}
     :valid-exchanges {:from-ib #(set (str/split % #","))}
     :order-types     {:from-ib #(set (str/split % #","))}}))
+
+
+(defn def-included-specs []
+  (doseq [[k {:keys [spec]}] default-schema]
+    (when spec
+      (eval `(s/def ~k ~spec)))))
+
+(def schema (atom default-schema))
+
