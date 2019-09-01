@@ -46,28 +46,19 @@ All feedback, issues and PRs welcome.
 
 # Installation
 
-Iboga depends on [IB's official Java API client](https://www.interactivebrokers.com/en/index.php?f=5041) which unfortunately isn't available in a public maven repo. To use iboga you will need to install the official Java client locally with Maven ([maven install instructions](https://maven.apache.org/install.html)).
+**First you will need to [install the Java API Client](https://github.com/jjttjj/iboga/wiki/Installing-the-Java-API-client)**
 
-To install the IB Java client locally
-
-1. Download the api source from [http://interactivebrokers.github.io](http://interactivebrokers.github.io). Agree to their terms then choose one of the versions under "Mac / Unix".
-2. Extract the zip file and navigate to "IBJts/source/JavaClient"
-3. run `mvn install`.
-4. Add one of the following to your deps.edn or project.clj dependencies (replace version string as needed):
-   ```
-   [com.interactivebrokers/tws-api "9.73.01-SNAPSHOT"]
-   ```
-   ```
-   com.interactivebrokers/tws-api {:mvn/version "9.73.01-SNAPSHOT"}
-   ```
-
-Now you can add the Clojars Iboga dependency
+Once the api client is installed locally you can now add it and iboga to your dependencies.
 
 ```clojure
-[io.jex/iboga "0.3.1-SNAPSHOT"] ;;leiningen
+ ;;leiningen
+[com.interactivebrokers/tws-api "9.73.01-SNAPSHOT"]
+[io.jex/iboga "0.3.2"]
 ```
-```
-io.jex/iboga {:mvn/version "0.3.1-SNAPSHOT"} ;;deps.edn
+```clojure
+ ;;deps.edn
+com.interactivebrokers/tws-api {:mvn/version "9.73.01-SNAPSHOT"}
+io.jex/iboga {:mvn/version "0.3.2"}
 ```
 [![Clojars Project](https://img.shields.io/clojars/v/io.jex/iboga.svg)](https://clojars.org/io.jex/iboga)
 
@@ -250,92 +241,6 @@ You can use `ib/validate-reqs` to toggle the validation:
 (ib/validate-reqs true)  ;;turns is back on
 
 ```
-
-# Higher level api
-
-While iboga makes the IB api client easier to use it is still fairly low level. One must still work on the level of incoming and outgoing messages when often what is really needed is a function call that synchronously returns the result of a request, or passes only the relevant data of asynchronous responses messages, without having to worry about messages. 
-
-Currently [wip.clj](src/iboga/wip.clj) exposes some higher level functionality, but I'm not sure manually wrapping the requests like this is the way to go and this namespace is likely to be deprecated at some point.
-
-The `wip.clj` functions can be used as follows:
-
-```clojure
-(require '[iboga.wip :as wip])
-
-(def contract {:local-symbol "SPY" :sec-type "STK" :exchange "SMART" :currency "USD"})
-
-;;These synchronously return results
-;;both argmap or argvec can still be used, but :id arg must be omitted
-;;requests of no arguments do not need an argmap or argvec
-(wip/current-time conn)
-(wip/contract-details conn [contract])
-(wip/historical-data conn {:contract contract :bar-size "1 day" :duration "1 Y"})
-
-```
-
-Only a very small portion of the functionality that could be wrapped like this is currently. Feel free to open an issue or submit a PR for any functionality you need here. 
-
-I believe it might be possible to provide metadata, such as which response message types are expected for a given request type, what the "response finished" message type will be, etc, to expose a higher level api in a more automatic manner.
-
-A sketch of how this might be done can be seen in [dev/iboga/wip2.clj](dev/iboga/wip2.clj). 
-
-# Customization
-
-**Iboga Is a Work In Progress**
-
-The IB api has a large surface area. Iboga the main features Iboga adds are:
-
-* "clojurization"/datafication of things that are represented as objects in the Java API client
-* default values and optional omissions for requests
-* specs 
-
-Theses features require attention and thought be given for each request type received message types.
-
-Currently only a small percentage of the API surface area is complete in Iboga. It is a goal to have these features implemented for the entire API, but in the meantime users can implement the individual features you need if they are not provided.
-
-Each spec-key in Iboga can have the following schema attributes set for it:
-
-* `:default-value`: A default value for a request argument spec-key
-* `:default-fn`: Request argument spec-keys can also have a functionally generated default. `:default-fn` should be a function which takes as argument an argument map with qualified spec-keys as keys, and which already has any `:default-value`s added, and returns a default value.
-* `:to-ib`: Any spec-key for an argument or "data-type" field can have a `:to-ib` function which translates it to the value recognized by IB.
-* `from-ib`: Any received message-data key spec-key or "data class" field can have a `from-ib` function which transforms it from the value provided by IB to a clojurey value.
-
-The `set-schema!` function can be used to set schema attributes.
-
-```clojure
-(ib/set-schema! :iboga.req.real-time-bars/bar-size :default-value "1 day")
-;;or the whole attributes map can be set
-(ib/set-schema! :iboga.req.historical-data/end
-                {:default-fn (fn [_argmap] (ZonedDateTime/now))
-                 :to-ib #(.format (DateTimeFormatter/ofPattern "yyyyMMdd[  HH:mm:ss]")
-                                  %)})
-```
-
-Specs should then be defined separately:
-
-```clojure
-(s/def :iboga.req.historical-data/end #(instance? ZonedDateTime %))
-````
-
-For a more thorough example of customization see [this example](examples/customization.clj).
-
-We are happy to accept pull request and new issues for your customizations to be added to the default implementation!
-
-
-# Roadmap
-
-### Names
-
-I am considering allowing users to customize the naming of spec-keys, ie, translation from the names IB uses for their methods/classes/parameters. 
-
-## Tests
-
-Tests are needed. Generative testing should be immensely useful given that most of the functionality can be represented with data that can in theory be generated. However, there is work to be done before this is possible.
-
-## Performance
-
-Measuring and improving performance is a goal.
-
 
 # See also
 
