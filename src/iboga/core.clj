@@ -277,48 +277,38 @@
   (when-not (s/valid? k args)
     (throw (Exception. (ex-info "Invalid request" (s/explain-data k args))))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;req ctx;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn req-ctx [conn [req-key args :as input]]
-  {:conn    conn
-   :req-key req-key
-   :args    args
-   :input   input})
-
-(defn assert-connected [{:keys [conn] :as ctx}]
-  (when-not (connected? conn)
-    (throw (Exception. "Not connected")))
-  ctx)
-
-(defn maybe-validate [{:keys [req-key args] :as ctx}]
+(defn maybe-validate [{:keys [req-key args] :as req-map}]
   (when @validate?
     (assert-valid-req (req-spec-key req-key) args)
-    ctx))
+    req-map))
 
-(defn ensure-argmap [{:keys [args req-key] :as ctx}]
-  (cond-> ctx
+(defn ensure-argmap [{:keys [args req-key] :as req-map}]
+  (cond-> req-map
     (vector? args) (update :args #(arglist->argmap req-key %))))
 
-(defn send-req [{:keys [conn req-key args] :as ctx}]
+(defn send-req [conn {:keys [req-key args] :as req-map}]
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
         qargs    (qualify-map spec-key args)
         ib-args  (to-ib qargs)]
+    (maybe-validate req-map)
     (invoke (:ecs conn)
             (meta/msg-key->ib-name spec-key)
             (argmap->arglist spec-key ib-args))
-    ctx))
+    req-map))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defn ensure-req-map [req]
+  (if (vector? req)
+    {:req-key (first req)
+     :args (second req)}
+    req))
 
-(defn req [conn request]
-  (-> (req-ctx conn request)
-      assert-connected
-      ensure-argmap
-      maybe-validate
-      send-req))
+(defn req [conn req-map]
+  (assert (connected? conn) "Not connected")
+  (->> req-map
+       ensure-req-map
+       ensure-argmap
+       (send-req conn)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

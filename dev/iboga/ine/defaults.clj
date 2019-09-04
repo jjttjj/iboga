@@ -64,5 +64,5 @@
                (s/keys ~@(when (not-empty req) [:req-un req])
                        ~@(when (not-empty opt) [:opt-un opt])))))))
 
-(defn add-default-args [ctx]
-  (update ctx :args #(add-defaults (:req-key ctx) %)))
+(defn add-default-args [req-map]
+  (update req-map :args #(add-defaults (:req-key req-map) %)))
