@@ -35,8 +35,12 @@
 ;;for now we wont' be picky about numbers
 (defn spec-for-class [class]
   (cond
-    (#{Float/TYPE Double/TYPE Integer/TYPE Long/TYPE} class) number?
-    (= Boolean/TYPE class) boolean?
+    (#{Float/TYPE Double/TYPE Integer/TYPE Long/TYPE} class)
+    number?
+
+    (= Boolean/TYPE class)
+    boolean?
+    
     :else #(instance? class %)))
 
 (defn ibkr-spec-key [k] (qualify-key k :ibkr))
@@ -161,14 +165,16 @@
 (defn qualify-map [parent m]
   (m/map-kv
    (fn [k v]
-     (let [k (qualify-key parent k)
-           field-type (meta/field-isa k)
-           v (if field-type
-               (if (vector? v)
-                 (mapv #(qualify-map field-type %) v)
-                 (qualify-map field-type v))
-               v)]
-       (m/map-entry k v)))
+     (let [qk         (qualify-key parent k)
+           field-type (meta/field-isa qk)
+           ;;todo: this will cause an error before specs can be
+           ;;checked if we expect a feild-type but receive a scalar
+           v          (if field-type
+                        (if (vector? v)
+                          (mapv #(qualify-map field-type %) v)
+                          (qualify-map field-type v))
+                        v)]
+       (m/map-entry qk v)))
    m))
 
 ;;doesn't currently handle nested sequences
@@ -263,28 +269,28 @@
     (qualify-key (req-spec-key k) arg)
     (qualify-key :iboga/req k)))
 
-(defn argmap->arglist [req-key argmap]
-  (mapv argmap (meta/req-key->field-keys req-key)))
+(defn argmap->arglist [req-key arg-map]
+  (mapv arg-map (meta/req-key->field-keys req-key)))
 
 (def validate? (atom true))
 
 (defn validate-reqs [b] (reset! validate? b))
 
-(defn assert-valid-req [k args]
-  (when-not (s/valid? k args)
-    (throw (Exception. (ex-info "Invalid request" (s/explain-data k args))))))
+(defn assert-valid-req [k arg-map]
+  (when-not (s/valid? k arg-map)
+    (throw (Exception. (ex-info "Invalid request" (s/explain-data k arg-map))))))
 
-(defn maybe-validate [[req-key args :as req-vec]]
+(defn maybe-validate [[req-key arg-map :as req-vec]]
   (when @validate?
-    (assert-valid-req (req-spec-key req-key) args)
+    (assert-valid-req (req-spec-key req-key) arg-map)
     req-vec))
 
-(defn req [conn [req-key args :as req-vec]]
+(defn req [conn [req-key arg-map :as req-vec]]
   (assert (connected? conn) "Not connected")
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
-        qargs    (qualify-map spec-key args)
-        ib-args  (to-ib qargs)]
+        qarg-map (qualify-map spec-key arg-map)
+        ib-args  (to-ib qarg-map)]
     (maybe-validate req-vec)
     (invoke (:ecs conn)
             (meta/msg-key->ib-name spec-key)
