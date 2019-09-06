@@ -27,7 +27,7 @@
                    (deliver result (:order-id msg))
                    (remove-handler conn this)))]
     (add-handler conn f)
-    (req conn [:ids [0]]);;arg for :ids does nothing
+    (req conn [:ids {:num-ids 0}]) ;;arg for :ids does nothing
     @result))
 
 (defn historical-data [conn args]
@@ -78,7 +78,7 @@
     (add-handler conn f)
     (req conn [:head-timestamp args])
     (condp = (deref result *timeout* ::timeout)
-      ::error   (do (req conn [:cancel-head-timestamp [id]])
+      ::error   (do (req conn [:cancel-head-timestamp {:id id}])
                     (throw (ex-info "head timestamp Error" @error)))
       ::timeout (throw (Exception. "head-timestamp timeout"))
       @result)))
@@ -123,7 +123,7 @@
 
                       (f msg))))
         stop-fn (fn []
-                  (req conn [:cancel-mkt-data [id]])
+                  (req conn [:cancel-mkt-data {:id id}])
                   (remove-handler conn h)
                   nil)]
     

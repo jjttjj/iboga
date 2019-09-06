@@ -266,9 +266,6 @@
 (defn argmap->arglist [req-key argmap]
   (mapv argmap (meta/req-key->field-keys req-key)))
 
-(defn arglist->argmap [req-key arglist]
-  (zipmap (req-params req-key) arglist))
-
 (def validate? (atom true))
 
 (defn validate-reqs [b] (reset! validate? b))
@@ -277,38 +274,22 @@
   (when-not (s/valid? k args)
     (throw (Exception. (ex-info "Invalid request" (s/explain-data k args))))))
 
-(defn maybe-validate [{:keys [req-key args] :as req-map}]
+(defn maybe-validate [[req-key args :as req-vec]]
   (when @validate?
     (assert-valid-req (req-spec-key req-key) args)
-    req-map))
+    req-vec))
 
-(defn ensure-argmap [{:keys [args req-key] :as req-map}]
-  (cond-> req-map
-    (vector? args) (update :args #(arglist->argmap req-key %))))
-
-(defn send-req [conn {:keys [req-key args] :as req-map}]
+(defn req [conn [req-key args :as req-vec]]
+  (assert (connected? conn) "Not connected")
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
         qargs    (qualify-map spec-key args)
         ib-args  (to-ib qargs)]
-    (maybe-validate req-map)
+    (maybe-validate req-vec)
     (invoke (:ecs conn)
             (meta/msg-key->ib-name spec-key)
             (argmap->arglist spec-key ib-args))
-    req-map))
-
-(defn ensure-req-map [req]
-  (if (vector? req)
-    {:req-key (first req)
-     :args (second req)}
-    req))
-
-(defn req [conn req-map]
-  (assert (connected? conn) "Not connected")
-  (->> req-map
-       ensure-req-map
-       ensure-argmap
-       (send-req conn)))
+    req-vec))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
