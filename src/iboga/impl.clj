@@ -29,11 +29,6 @@
 (defn date? [x]
   (instance? LocalDate x))
 
-(defn default-duration [bar-size]
-  (if (#{"1 day" "1 week" "1 month"} bar-size)
-    "1 Y"
-    "1 D"))
-
 (s/def ::rth? boolean?)
 
 (def rth? {:spec ::rth? :to-ib bool->bit})
@@ -74,7 +69,9 @@
 
                 :from-ib #(hash-map :iboga.tag-value/tag (.-m_tag %)
                                     :iboga.tag-value/value (.-m_value %))}}
-   
+   #:iboga.bar
+   {:time {:from-ib parse-ib-time}}
+
    #:iboga.tag-value{:tag   {:spec any?}
                      :value {:spec any?}}
 
@@ -104,8 +101,9 @@
    #:iboga.recv.head-timestamp
    {:head-timestamp recv-date-str}
 
-   #:iboga.bar
-   {:time {:from-ib parse-ib-time}}
+   #:iboga.recv.current-time
+   {:time parse-ib-time}
+   
 
    #:iboga.contract-details
    {:liquid-hours    {:from-ib parse-contract-hours}
@@ -114,36 +112,10 @@
     :order-types     {:from-ib #(set (str/split % #","))}}))
 
 
+(defn def-included-specs []
+  (doseq [[k {:keys [spec]}] default-schema]
+    (when spec
+      (eval `(s/def ~k ~spec)))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;request defaults;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn default-duration [bar-size]
-  (if (#{"1 day" "1 week" "1 month"} bar-size)
-    "1 Y"
-    "1 D"))
-
-(def defaults
-  {:historical-data {:default-vals {:show          "TRADES"
-                                    :chart-options []
-                                    :bar-size      "1 day"
-                                    :format-date   1
-                                    :rth?          true
-                                    :update?       false}
-                     :default-fn   (fn [argmap]
-                                     (cond-> {}
-                                       (and (not (contains? argmap :end))
-                                            (not (:update? argmap)))
-                                       (assoc :end (LocalDateTime/now))
-                                       
-                                       (not (contains? argmap :duration))
-                                       (assoc :duration (default-duration (:bar-size argmap)))
-                                       
-                                       true (merge argmap)))}
-   :head-timestamp {:default-vals {:format-date 1
-                                   :show        "TRADES"
-                                   :rth?        true}}
-   :ids            {:default-vals {:num-ids 1}}})
-
+(def schema (atom default-schema))
 

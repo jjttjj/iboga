@@ -2,7 +2,7 @@
 
 # Iboga
 
-Iboga is a data driven clojure wrapper around Interactive Brokers' Java api client. 
+Iboga is a data driven clojure wrapper around Interactive Brokers' Java api client.
 
 ```clojure
 (require '[iboga.core :as ib])
@@ -11,23 +11,25 @@ Iboga is a data driven clojure wrapper around Interactive Brokers' Java api clie
 
 (ib/connect conn "localhost" 7497)
 
-(defn handler1 [[msg-key msg]]
+(def log (atom []))
+
+(defn handler1 [[msg-key msg-data :as msg]]
   (when (= (:id msg) 123)
-    (printf "new %s message: %s\n" msg-key msg)))
+    (printf "new %s message: %s" msg-key)
+    (swap! log conj msg)))
 
 (ib/add-handler conn handler1)
 
-(def contract
+(def SPY
   {:local-symbol "SPY"
    :sec-type     "STK"
    :exchange     "SMART"
    :currency     "USD"})
 
-(ib/req conn [:historical-data
-              {:id       123
-               :contract contract
-               :duration "1 W"
-               :bar-size "1 hour"}])
+(ib/req conn [:contract-details
+              {:id 123 :contract SPY}])
+
+@log
 
 ;;later:
 ;;(ib/remove-handler conn handler1)
@@ -36,7 +38,7 @@ Iboga is a data driven clojure wrapper around Interactive Brokers' Java api clie
 More complete examples can be seen in the [examples directory](examples/):
 
 * [tutorial1](examples/tutorial1.clj): covers historical data requests and discovering arguments from the repl.
-* [tutorial2](examples/tutorial2.clj): covers higher level functionality, contract details requests and placing orders (including complex multi-legged orders).
+* More examples coming soon...
 
 # Status
 
@@ -115,44 +117,50 @@ To get the full spec-key for a request msg-key, use the function `req-spec-key`.
 
 ```clojure
 (ib/req-spec-key :historical-data) ;;=> :iboga.req/historical-data
+(s/describe (ib/req-spec-key :historical-data))
+
 ;;=>
 (keys
- :req
-    [:iboga.req.historical-data/id :iboga.req.historical-data/contract]
- :opt
- [:iboga.req.historical-data/end
+ :req-un
+ (:iboga.req.historical-data/id
+  :iboga.req.historical-data/contract
+  :iboga.req.historical-data/end
   :iboga.req.historical-data/duration
   :iboga.req.historical-data/bar-size
   :iboga.req.historical-data/show
   :iboga.req.historical-data/rth?
   :iboga.req.historical-data/format-date
   :iboga.req.historical-data/update?
-  :iboga.req.historical-data/chart-options])
+  :iboga.req.historical-data/chart-options))
 ```
 
-We can see above that a historical-data request requires a `:id` and a `:contract`
+We can now see the required keys that a `:historical-data` request takes. Note that the keys that are returned from an `s/describe` call are qualified but we can use unqualified keys in our requests.
 
 We can also see what the spec for each of the arguments themselves is. 
 
 `req-spec-key` takes as an optional second argument a key representing one of the above arguments:
 
 ```clojure
-(s/describe (req-spec-key :historical-data :id)) 
+(s/describe (ib/req-spec-key :historical-data :id)) 
 ;;=> #function[clojure.core/number?]
-;;(identical to (s/describe :iboga.req.historical-data/id)))
+;;identical to (s/describe :iboga.req.historical-data/id))
 
-
-(s/describe (req-spec-key :historical-data :contract))
+(s/describe (ib/req-spec-key :historical-data :contract))
 ;;=>
 (keys
- :opt
- [:iboga.contract/local-symbol
-  :iboga.contract/sec-type
-  :iboga.contract/symbol
-  :iboga.contract/currency
-  :iboga.contract/sec-id
-  ;;<clipped>
-  ])
+ :opt-un
+ [:iboga.contract/currency
+  :iboga.contract/strike
+  :iboga.contract/combo-legs
+  :iboga.contract/right
+  :iboga.contract/trading-class
+  :iboga.contract/exchange
+  :iboga.contract/include-expired
+  :iboga.contract/primary-exch
+  :iboga.contract/combo-legs-descrip
+  :iboga.contract/multiplier
+  ...])
+;;the contract in teh `:historical-data` request is itself a map with optional unqualified keys
 ```
 
 So `:id` is a number and `:contract` is another map with a bunch of optional keys. All IB "data classes" such as [Order](http://interactivebrokers.github.io/tws-api/classIBApi_1_1Order.html) and [Contract](http://interactivebrokers.github.io/tws-api/classIBApi_1_1Contract.html) in interactive brokers are just spec'ed maps in Iboga.
@@ -193,15 +201,10 @@ Currently the only way to remove a handler is to pass `remove-handler` the ident
 As described above a request message looks like:
 
 ```clojure
-[<msg-key> <msg-data>]
+[<req-key> <arg-map>]
 ```
 
-The `msg-key` is an unqualified keyword describing the req type. The `msg-data` can be either of the following:
-
-* **argmap**: A map of unqualified argument keys to their values. Optional arguments can be omitted
-* **argvec**: A vector of argument values. Any number of trailing optional arguments can be omitted (but all values preceding an argument that you'd like to use must be included.
-
-Vector arguments must be in the order given with `s/describe` (see the section "discoverability" above), with all `:req`uired arguments followed by the `:opt`ional arguments. The order is the same as parameters of the corresponding method in the [EClient class](http://interactivebrokers.github.io/tws-api/classIBApi_1_1EClient.html).
+The `req-key` is an unqualified keyword describing the req type. The `arg-map` is a map of unqualified argument keys to their values.
 
 All "data types" used as arguments such as `contract`s and `order`s should be given as unqualified maps.
 
@@ -211,25 +214,7 @@ Remember to set up your handlers before making a request.
 
 `req` takes two arguments, a `client` and a message.
 
-```clojure
-(def log (atom [])
-(def conn (ib/client #(swap! log conj %)))
-(ib/connect conn "localhost" 7497)
-
-(def contract {:local-symbol "SPY" :sec-type "STK" :exchange "SMART" :currency "USD"})
-
-(ib/req conn [:historical-data {:id 123 :contract contract :duration "1 W" :bar-size "1 hour"}] )
-;;OR
-(ib/req conn [:historical-data [123 ;;:id
-                                contract ;;:contract
-                                ;;unlike above, :end key cannot be omitted if
-                                ;;we want the subsequent arguments 
-                                ;;(duration and bar-size) defined
-                                (java.time.LocalDateTime/now) ;;:end
-                                "1 W" ;;:duration
-                                "1 hour" ;;bar-size
-                                ]])
-```
+See [tutorial1](examples/tutorial1.clj) for some request examples.
 
 ## Specs
 

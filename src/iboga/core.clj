@@ -19,37 +19,14 @@
   (clojure.lang.Reflector/invokeInstanceMethod obj mname (to-array args)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;schema;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;ib transformations;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def schema (atom {}))
+(defn def-to-ib   [k f] (swap! impl/schema assoc-in [k :to-ib] f))
+(defn def-from-ib [k f] (swap! impl/schema assoc-in [k :from-ib] f))
 
-(defn set-schema!
-  ([m] (reset! schema m))
-  ([k attrs] (swap! schema assoc k attrs))
-  ([k attr v] (swap! schema assoc-in [k attr] v)))
-
-;;(defn get-spec [k]          (get-in @schema [k :spec]))
-(defn get-default-value       [k] (get-in @schema [k :default-value]))
-(defn contains-default-value? [k] (contains? (get @schema k) :default-value))
-
-(defn get-default-fn [k]    (get-in @schema [k :default-fn]))
-(defn get-to-ib [k]         (get-in @schema [k :to-ib]))
-(defn get-from-ib [k]       (get-in @schema [k :from-ib]))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;defaults;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn add-defaults [req-key argmap]
-  (let [dflt-vals (get-in impl/defaults [req-key :default-vals] {})
-        dflt-fn   (get-in impl/defaults [req-key :default-fn])]
-    (cond-> (merge dflt-vals argmap)
-      dflt-fn dflt-fn)))
-
-(defn optional? [req-key param-key]
-  ;;could pre-generate add-defaults for empty map for each req
-  (contains? (add-defaults req-key {}) param-key))
+(defn get-to-ib   [k] (get-in @impl/schema [k :to-ib]))
+(defn get-from-ib [k] (get-in @impl/schema [k :from-ib]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;specs;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -58,8 +35,12 @@
 ;;for now we wont' be picky about numbers
 (defn spec-for-class [class]
   (cond
-    (#{Float/TYPE Double/TYPE Integer/TYPE Long/TYPE} class) number?
-    (= Boolean/TYPE class) boolean?
+    (#{Float/TYPE Double/TYPE Integer/TYPE Long/TYPE} class)
+    number?
+
+    (= Boolean/TYPE class)
+    boolean?
+    
     :else #(instance? class %)))
 
 (defn ibkr-spec-key [k] (qualify-key k :ibkr))
@@ -86,25 +67,15 @@
 
 (defn def-req-specs []
   (doseq [[req-key params] meta/req-key->field-keys]
-    (let [{opt true
-           req false} (group-by #(optional? (unqualify req-key)
-                                            (unqualify %))
-                                params)]
-      (eval `(s/def ~req-key
-               (s/keys ~@(when (not-empty opt) [:opt-un opt])
-                       ~@(when (not-empty req) [:req-un req])))))))
-
-(defn def-schema-specs []
-  (doseq [[k {:keys [spec]}] @schema]
-    (when spec
-      (eval `(s/def ~k ~spec)))))
+    (eval
+     `(s/def ~req-key (s/keys ~@(when (not-empty params) [:req-un params]))))))
 
 (defn init-specs []
   (def-enum-specs)
   (def-struct-specs)
   (def-req-specs)
   (def-field-specs)
-  (def-schema-specs))
+  (impl/def-included-specs))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;transform;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -185,7 +156,6 @@
 ;;init;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(set-schema! impl/default-schema)
 (init-specs)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -195,14 +165,16 @@
 (defn qualify-map [parent m]
   (m/map-kv
    (fn [k v]
-     (let [k (qualify-key parent k)
-           field-type (meta/field-isa k)
-           v (if field-type
-               (if (vector? v)
-                 (mapv #(qualify-map field-type %) v)
-                 (qualify-map field-type v))
-               v)]
-       (m/map-entry k v)))
+     (let [qk         (qualify-key parent k)
+           field-type (meta/field-isa qk)
+           ;;todo: this will cause an error before specs can be
+           ;;checked if we expect a feild-type but receive a scalar
+           v          (if field-type
+                        (if (vector? v)
+                          (mapv #(qualify-map field-type %) v)
+                          (qualify-map field-type v))
+                        v)]
+       (m/map-entry qk v)))
    m))
 
 ;;doesn't currently handle nested sequences
@@ -297,71 +269,34 @@
     (qualify-key (req-spec-key k) arg)
     (qualify-key :iboga/req k)))
 
-(defn argmap->arglist [req-key argmap]
-  (mapv argmap (meta/req-key->field-keys req-key)))
-
-(defn arglist->argmap [req-key arglist]
-  (zipmap (req-params req-key) arglist))
+(defn argmap->arglist [req-key arg-map]
+  (mapv arg-map (meta/req-key->field-keys req-key)))
 
 (def validate? (atom true))
 
 (defn validate-reqs [b] (reset! validate? b))
 
-(defn assert-valid-req [k args]
-  (when-not (s/valid? k args)
-    (throw (Exception. (ex-info "Invalid request" (s/explain-data k args))))))
+(defn assert-valid-req [k arg-map]
+  (when-not (s/valid? k arg-map)
+    (throw (Exception. (ex-info "Invalid request" (s/explain-data k arg-map))))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;req ctx;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn req-ctx [conn [req-key args :as input]]
-  {:conn    conn
-   :req-key req-key
-   :args    args
-   :input   input})
-
-(defn assert-connected [{:keys [conn] :as ctx}]
-  (when-not (connected? conn)
-    (throw (Exception. "Not connected")))
-  ctx)
-
-(defn maybe-validate [{:keys [req-key args] :as ctx}]
+(defn maybe-validate [[req-key arg-map :as req-vec]]
   (when @validate?
-    (assert-valid-req (req-spec-key req-key) args)
-    ctx))
+    (assert-valid-req (req-spec-key req-key) arg-map)
+    req-vec))
 
-(defn ensure-argmap [{:keys [args req-key] :as ctx}]
-  (cond-> ctx
-    (vector? args) (update :args #(arglist->argmap req-key %))))
-
-(defn add-default-args [ctx]
-  (update ctx :args #(add-defaults (:req-key ctx) %)))
-
-(defn send-req [{:keys [conn req-key args] :as ctx}]
+(defn req [conn [req-key arg-map :as req-vec]]
+  (assert (connected? conn) "Not connected")
+  (maybe-validate req-vec)
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
-        qargs    (qualify-map spec-key args)
-        ib-args  (to-ib qargs)]
+        qarg-map (qualify-map spec-key arg-map)
+        ib-args  (to-ib qarg-map)]
+
     (invoke (:ecs conn)
             (meta/msg-key->ib-name spec-key)
             (argmap->arglist spec-key ib-args))
-    ctx))
-
-(defn prep-req [ctx]
-  (-> ctx
-      assert-connected
-      ensure-argmap
-      add-default-args
-      maybe-validate))
-
-(defn default-req-handler [ctx]
-  (-> ctx prep-req send-req))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn req [conn request]
-  (default-req-handler (req-ctx conn request)))
+    req-vec))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;repl helpers;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
