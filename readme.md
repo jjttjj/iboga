@@ -55,12 +55,12 @@ Once the api client is installed locally you can now add it and iboga to your de
 ```clojure
  ;;leiningen
 [com.interactivebrokers/tws-api "9.73.01-SNAPSHOT"]
-[io.jex/iboga "0.3.2"]
+[io.jex/iboga "0.3.3"]
 ```
 ```clojure
  ;;deps.edn
 com.interactivebrokers/tws-api {:mvn/version "9.73.01-SNAPSHOT"}
-io.jex/iboga {:mvn/version "0.3.2"}
+io.jex/iboga {:mvn/version "0.3.3"}
 ```
 [![Clojars Project](https://img.shields.io/clojars/v/io.jex/iboga.svg)](https://clojars.org/io.jex/iboga)
 
