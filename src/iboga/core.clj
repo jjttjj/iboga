@@ -287,11 +287,12 @@
 
 (defn req [conn [req-key arg-map :as req-vec]]
   (assert (connected? conn) "Not connected")
+  (maybe-validate req-vec)
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
         qarg-map (qualify-map spec-key arg-map)
         ib-args  (to-ib qarg-map)]
-    (maybe-validate req-vec)
+
     (invoke (:ecs conn)
             (meta/msg-key->ib-name spec-key)
             (argmap->arglist spec-key ib-args))
