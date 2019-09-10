@@ -69,7 +69,9 @@
 
                 :from-ib #(hash-map :iboga.tag-value/tag (.-m_tag %)
                                     :iboga.tag-value/value (.-m_value %))}}
-   
+   #:iboga.bar
+   {:time {:from-ib parse-ib-time}}
+
    #:iboga.tag-value{:tag   {:spec any?}
                      :value {:spec any?}}
 
@@ -99,8 +101,9 @@
    #:iboga.recv.head-timestamp
    {:head-timestamp recv-date-str}
 
-   #:iboga.bar
-   {:time {:from-ib parse-ib-time}}
+   #:iboga.recv.current-time
+   {:time parse-ib-time}
+   
 
    #:iboga.contract-details
    {:liquid-hours    {:from-ib parse-contract-hours}
