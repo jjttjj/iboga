@@ -75,6 +75,8 @@
    #:iboga.tag-value{:tag   {:spec any?}
                      :value {:spec any?}}
 
+   ;;{:iboga/contract {:to-ib (fn [x] (println x) x)}}
+
    #:iboga.contract
    {:sec-type                          {:spec :iboga.enum/sec-type}
     :last-trade-date-or-contract-month {:spec    date?
@@ -83,7 +85,7 @@
    #:iboga.req.historical-data
    {:end         {:spec  (s/nilable local-date-time?)
                   :to-ib #(when % (format-ib-time %))}
-    :duration    {:spec #(re-find #"[0-9]+ [SDWMY]" %)}
+    :duration    {:spec #(re-find #"[0-9]+ [SDWMY]$" %)}
     :bar-size    {:spec :iboga.enum/bar-size}
     :show        {:spec :iboga.enum/show}
     :format-date format-date
