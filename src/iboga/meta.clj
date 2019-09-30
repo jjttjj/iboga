@@ -103,9 +103,12 @@
 
 (def saved-names (read-string (slurp (io/resource "parameter-names.edn"))))
 
-(defn param-name [^Parameter p]
+(defn hash-param [p ix]
+  (hash (str (.getDeclaringExecutable p) ix)))
+
+(defn param-name [^Parameter p ix]
   (get saved-names
-       (hash p)
+       (hash-param p ix)
        ;;for data-classes we don't need param names; default to regular .getName
        (.getName p)))
 
@@ -148,18 +151,18 @@
         {:java/class     (first actual)
          :java/collection t}))))
 
-(defn param-data [cname mname param]
+(defn param-data [cname mname param ix]
   (let [base (type-data param)
         isa  (when (iboga-struct-classes (:java/class base))
                (->spec-key (.getName (:java/class base))))]
-    (cond-> (assoc base :spec-key (->spec-key cname mname (param-name param)))
+    (cond-> (assoc base :spec-key (->spec-key cname mname (param-name param ix)))
       isa (assoc :isa isa))))
 
 (defn method-data [^Method m]
   (let [cname  (.getName (.getDeclaringClass m))
         mname  (.getName m)
         params (.getParameters m)]
-    {:params    (mapv (partial param-data cname mname) params)
+    {:params    (map-indexed (fn [ix p] (param-data cname mname p ix)) params)
      :ib-name   mname
      :spec-key (->spec-key cname mname)}))
 
