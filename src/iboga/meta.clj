@@ -89,6 +89,7 @@
 (def iboga-struct-classes
   #{com.ib.client.Contract
     com.ib.client.ContractDetails
+    com.ib.client.CommissionReport
     com.ib.client.Order
     com.ib.client.ComboLeg
     com.ib.client.OrderState
