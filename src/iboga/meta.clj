@@ -98,7 +98,8 @@
 
 (def iboga-enum-classes
   (conj (set (.getClasses Types))
-        com.ib.client.OrderType))
+        com.ib.client.OrderType
+        com.ib.client.OrderStatus))
 
 (def handled-classes (into iboga-msg-classes iboga-struct-classes))
 
