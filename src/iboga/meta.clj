@@ -88,18 +88,23 @@
 
 (def iboga-struct-classes
   #{com.ib.client.Contract
+    com.ib.client.ContractDescription
     com.ib.client.ContractDetails
     com.ib.client.CommissionReport
+    com.ib.client.Execution
     com.ib.client.Order
     com.ib.client.ComboLeg
     com.ib.client.OrderState
     com.ib.client.TagValue
     com.ib.client.Bar})
 
+;;todo:    com.ib.client.Execution     com.ib.client.Execution Liquidities
+
 (def iboga-enum-classes
   (conj (set (.getClasses Types))
         com.ib.client.OrderType
-        com.ib.client.OrderStatus))
+        com.ib.client.OrderStatus
+        com.ib.client.Liquidities))
 
 (def handled-classes (into iboga-msg-classes iboga-struct-classes))
 
@@ -298,7 +303,10 @@
 ;;EWrapper has multiple arities for error so it cannot properly be inded
 (def fields-for
   (merge struct-key->setter-fields
-         req-key->fields))
+         req-key->fields
+
+         ;;experiental, probably breaks something
+         recv-key->fields))
 
 (def spec-key->field
   (->> fields-for
