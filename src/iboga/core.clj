@@ -129,18 +129,22 @@
 
            :else x))))))
 
-(def to-clj-coll
-  {java.util.ArrayList (fn [xs] (into [] xs))
-   java.util.HashMap   (fn [xs] (into {} xs))
-   java.util.HashSet   (fn [xs] (into #{} xs))})
+(defn to-clj-coll [coll-type xs]
+  (condp isa? coll-type
+    java.util.ArrayList (into [] xs)
+    java.util.HashMap   (into {} xs)
+    java.util.HashSet   (into #{} xs)
+    ;;else it should be an array
+    (vec xs)))
 
 (defn from-ib
   ([m] (m/map-kv #(m/map-entry %1 (from-ib %1 %2)) m))
   ([k x]
    (let [from-ib-fn  (get-from-ib k)
-         clj-coll-fn (to-clj-coll (class x))]
+         coll-type (meta/field-collection k)]
      (cond
-       clj-coll-fn (clj-coll-fn (map #(from-ib (meta/field-isa k) %) x))
+       coll-type
+       (to-clj-coll coll-type (map #(from-ib (meta/field-isa k) %) x))
        
        ;;allow custom translation to/from ib
        (and (not from-ib-fn) (meta/struct-class->getter-fields (class x)))

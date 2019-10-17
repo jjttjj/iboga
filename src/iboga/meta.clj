@@ -137,10 +137,7 @@
   (let [t  (.getType p)
         pt (.getParameterizedType p)]
     (cond
-      ;;array -> vector not yet implemented
-      #_
       (.isArray t)
-      #_
       {:java/class     (.getComponentType t)
        :java/collection :array}
       
@@ -329,7 +326,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn param-tag [{:java/keys [collection class]}]
-  (pr-str (or collection class)))
+  (if (= collection :array)
+    (pr-str (type (into-array class [])))
+    (pr-str (or collection class))))
 
 (defn param-tagged-sym [{:keys [spec-key] :as p}]
   (with-meta (symbol (name spec-key)) {:tag (param-tag p)}))
