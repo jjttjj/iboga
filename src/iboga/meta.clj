@@ -92,6 +92,7 @@
     com.ib.client.ContractDetails
     com.ib.client.CommissionReport
     com.ib.client.Execution
+    com.ib.client.PriceIncrement
     com.ib.client.Order
     com.ib.client.ComboLeg
     com.ib.client.OrderState
