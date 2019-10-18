@@ -1,19 +1,16 @@
-(ns iboga.core
-  (:require [clojure.spec.alpha :as s]
+(ns iboga.client
+  (:require [iboga.meta :as meta]
             [clojure.tools.logging :as log]
+            [iboga.util :as u]
+            [medley.core :as m]
             [iboga.impl :as impl]
-            [iboga.meta :as meta]
-            [medley.core :as m])
+            [iboga.specs]
+            [clojure.spec.alpha :as s])
   (:import [com.ib.client EClientSocket EJavaSignal EReader]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;util;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn unqualify [k] (keyword (name k)))
-
-(defn qualify-key [parent k]
-  (keyword (str (namespace parent) "." (name parent)) (name k)))
 
 (defn invoke [obj mname args]
   (clojure.lang.Reflector/invokeInstanceMethod obj mname (to-array args)))
@@ -27,55 +24,6 @@
 
 (defn get-to-ib   [k] (get-in @impl/schema [k :to-ib]))
 (defn get-from-ib [k] (get-in @impl/schema [k :from-ib]))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;specs;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;for now we wont' be picky about numbers
-(defn spec-for-class [class]
-  (cond
-    (#{Float/TYPE Double/TYPE Integer/TYPE Long/TYPE} class)
-    number?
-
-    (= Boolean/TYPE class)
-    boolean?
-    
-    :else #(instance? class %)))
-
-(defn ibkr-spec-key [k] (qualify-key k :ibkr))
-
-(defn def-field-specs []
-  (doseq [[k f] meta/spec-key->field]
-    (let  [ibkr-key   (ibkr-spec-key k)
-           collection (:java/collection f)
-           class      (or collection (:java/class f))
-           field-spec (or (meta/field-isa k) ibkr-key)]
-      (eval `(s/def ~ibkr-key ~(spec-for-class class)))
-      (eval `(s/def ~k ~(if collection
-                          `(s/coll-of ~field-spec)
-                          field-spec))))))
-
-(defn def-enum-specs []
-  (doseq [[k s] meta/enum-sets]
-    (eval `(s/def ~k ~s))))
-
-(defn def-struct-specs []
-  (doseq [[k fields] meta/struct-key->field-keys]
-    (let [fields (vec fields)]
-      (eval `(s/def ~k (s/keys :opt-un ~fields))))))
-
-(defn def-req-specs []
-  (doseq [[req-key params] meta/req-key->field-keys]
-    (eval
-     `(s/def ~req-key (s/keys ~@(when (not-empty params) [:req-un params]))))))
-
-(defn init-specs []
-  (def-enum-specs)
-  (def-struct-specs)
-  (def-req-specs)
-  (def-field-specs)
-  (impl/def-included-specs))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;transform;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -140,8 +88,8 @@
 (defn from-ib
   ([m] (m/map-kv #(m/map-entry %1 (from-ib %1 %2)) m))
   ([k x]
-   (let [from-ib-fn  (get-from-ib k)
-         coll-type (meta/field-collection k)]
+   (let [from-ib-fn (get-from-ib k)
+         coll-type  (meta/field-collection k)]
      (cond
        coll-type
        (to-clj-coll coll-type (map #(from-ib (meta/field-isa k) %) x))
@@ -155,45 +103,6 @@
        (meta/iboga-enum-classes (type x)) (str x)
        
        :else x))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;init;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(init-specs)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;qualifying;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn qualify-map [parent m]
-  (m/map-kv
-   (fn [k v]
-     (let [qk         (qualify-key parent k)
-           field-type (meta/field-isa qk)
-           ;;todo: this will cause an error before specs can be
-           ;;checked if we expect a feild-type but receive a scalar
-           v          (if field-type
-                        (if (vector? v)
-                          (mapv #(qualify-map field-type %) v)
-                          (qualify-map field-type v))
-                        v)]
-       (m/map-entry qk v)))
-   m))
-
-(defn unqualify-walk [x]
-  (cond
-    (map? x)
-    (m/map-kv
-     (fn [k v]
-       (m/map-entry (unqualify k)
-                    (unqualify-walk v)))
-     x)
-
-    (sequential? x)
-    (mapv unqualify-walk x)
-
-    :else x))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;EWrapper;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -210,19 +119,53 @@
   `(reify com.ib.client.EWrapper ~@(make-reify-specs cb)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;qualifying;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn qualify-map [parent m]
+  (m/map-kv
+   (fn [k v]
+     (let [qk         (u/qualify-key parent k)
+           field-type (meta/field-isa qk)
+           ;;todo: this will cause an error before specs can be
+           ;;checked if we expect a feild-type but receive a scalar
+           v          (if field-type
+                        (if (vector? v)
+                          (mapv #(qualify-map field-type %) v)
+                          (qualify-map field-type v))
+                        v)]
+       (m/map-entry qk v)))
+   m))
+
+(defn unqualify-walk [x]
+  (cond
+    (map? x)
+    (m/map-kv
+     (fn [k v]
+       (m/map-entry (u/unqualify k)
+                    (unqualify-walk v)))
+     x)
+
+    (sequential? x)
+    (mapv unqualify-walk x)
+
+    :else x))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;client;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn unqualify-msg [msg]
   (-> msg
-      (update 0 unqualify)
-      (update 1 (comp unqualify-map from-ib))))
+      (update 0 u/unqualify)
+      (update 1 (comp unqualify-walk from-ib))))
 
 (defn process-messages [client reader signal]
   (while (.isConnected client)
     (.waitForSignal signal)
     (.processMsgs reader)))
 
+;;should possibly return the client-id, as a promise?
 (defn client
   "Takes one or more message handler functions and returns a map which
   represents an IB api client."
@@ -254,6 +197,7 @@
   [conn host port & [client-id]]
   ((:connect-fn conn) host port client-id))
 
+;;should disconnect remove hanlders?
 (defn disconnect [conn] (-> conn :ecs .eDisconnect))
 
 (defn connected? [conn] (-> conn :ecs .isConnected))
@@ -273,13 +217,13 @@
 (def req-params
   (->> meta/req-key->fields
        (map (fn [[k v]]
-              [(unqualify k) (mapv (comp unqualify :spec-key) v)]))
+              [(u/unqualify k) (mapv (comp u/unqualify :spec-key) v)]))
        (into {})))
 
 (defn req-spec-key [k & [arg]]
   (if arg
-    (qualify-key (req-spec-key k) arg)
-    (qualify-key :iboga/req k)))
+    (u/qualify-key (req-spec-key k) arg)
+    (u/qualify-key :iboga/req k)))
 
 (defn argmap->arglist [req-key arg-map]
   (mapv arg-map (meta/req-key->field-keys req-key)))
@@ -318,6 +262,6 @@
   "Returns pairs of Interactive Brokers method name strings which contain the search string to the message key used to make requests/handle received messages in Iboga. Case insensitive."
   [ib-name-str]
   (->> meta/ib-msg-name->spec-key
-       (m/map-vals unqualify)
+       (m/map-vals u/unqualify)
        (filter #(.contains (.toLowerCase (first %)) ib-name-str))
        (sort-by first)))
