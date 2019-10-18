@@ -5,6 +5,6 @@
   camel-snake-kebab                {:mvn/version "0.4.0"}
   com.interactivebrokers/tws-api   {:mvn/version "9.73.01-SNAPSHOT"}}
 
- :aliases {:dev {:extra-paths ["dev"]}}
+ :aliases {:dev {:extra-paths ["dev" "test"]}}
  
  :paths ["src" "resources"]}
