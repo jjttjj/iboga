@@ -181,11 +181,19 @@
        (m/map-entry qk v)))
    m))
 
-;;doesn't currently handle nested sequences
-(defn unqualify-map [m]
-  (m/map-kv
-   (fn [k v] (m/map-entry (unqualify k) (if (map? v) (unqualify-map v) v)))
-   m))
+(defn unqualify-walk [x]
+  (cond
+    (map? x)
+    (m/map-kv
+     (fn [k v]
+       (m/map-entry (unqualify k)
+                    (unqualify-walk v)))
+     x)
+
+    (sequential? x)
+    (mapv unqualify-walk x)
+
+    :else x))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;EWrapper;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
