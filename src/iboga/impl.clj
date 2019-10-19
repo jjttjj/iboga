@@ -69,6 +69,12 @@
 
                 :from-ib #(hash-map :iboga.tag-value/tag (.-m_tag %)
                                     :iboga.tag-value/value (.-m_value %))}}
+
+   #:iboga.order
+   
+   {:total-quantity {:spec pos? ;;ib uses float
+                     }}
+   
    #:iboga.bar
    {:time {:from-ib parse-ib-time}}
 

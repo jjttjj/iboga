@@ -24,7 +24,7 @@
     [{:tag "NonGuaranteed" :value 0}]}})
 
 (deftest test-qualify-map
-  (is (= (ib/qualify-map :iboga.req/place-order complex-order)
+  (is (= (ib/walk-qualified #(identity %2) :iboga.req/place-order complex-order)
          {:iboga.req.place-order/order-id 111
           :iboga.req.place-order/contract
           {:iboga.contract/symbol   "SPY"
@@ -32,13 +32,13 @@
            :iboga.contract/currency "USD"
            :iboga.contract/exchange "SMART"
            :iboga.contract/combo-legs
-           [{:iboga.combo-leg/conid 1
-             :iboga.combo-leg/ratio 1
-             :iboga.combo-leg/action "SELL"
+           [{:iboga.combo-leg/conid    1
+             :iboga.combo-leg/ratio    1
+             :iboga.combo-leg/action   "SELL"
              :iboga.combo-leg/exchange "SMART"}
-            {:iboga.combo-leg/conid 2
-             :iboga.combo-leg/ratio 1
-             :iboga.combo-leg/action "BUY"
+            {:iboga.combo-leg/conid    2
+             :iboga.combo-leg/ratio    1
+             :iboga.combo-leg/action   "BUY"
              :iboga.combo-leg/exchange "SMART"}]}
           :iboga.req.place-order/order
           {:iboga.order/action         "BUY"
@@ -49,12 +49,14 @@
 
 (deftest test-unqualify-walk
   (is (= complex-order
-         (ib/unqualify-walk (ib/qualify-map :iboga.req/place-order complex-order)))))
+         (ib/unqualify-walk
+          (ib/walk-qualified #(identity %2)
+                             :iboga.req/place-order complex-order)))))
 
 (deftest test-to-ib
   (let [{my-order    :iboga.req.place-order/order
          my-contract :iboga.req.place-order/contract}
-        (ib/to-ib (ib/qualify-map :iboga.req/place-order complex-order))
+        (ib/walk-qualified ib/to-ib :iboga.req/place-order complex-order)
 
         {their-order    :iboga.req.place-order/order
          their-contract :iboga.req.place-order/contract}

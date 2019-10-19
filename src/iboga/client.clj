@@ -5,7 +5,8 @@
             [medley.core :as m]
             [iboga.impl :as impl]
             [iboga.specs]
-            [clojure.spec.alpha :as s])
+            [clojure.spec.alpha :as s]
+            [clojure.walk :as walk])
   (:import [com.ib.client EClientSocket EJavaSignal EReader]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -55,27 +56,25 @@
    java.util.Set  (fn [xs] (java.util.HashSet. xs))})
 
 (defn to-ib
-  ([m]
-   (m/map-kv #(m/map-entry %1 (to-ib %1 %2)) m))
-  ([k x]
-   (let [collection-class (meta/field-collection k)]
-     (if-let [java-coll-fn (to-java-coll collection-class)]
-       (java-coll-fn (map #(to-ib (meta/field-isa k) %) x))
-       
-       (let [type-key (or
-                       ((set (keys meta/struct-key->class)) k)
-                       (meta/field-isa k))
-             to-ib-fn (or (get-to-ib type-key)
-                          (get-to-ib k))]
-         (cond
-           ;;if we have a to-ib fn for its type or key we do that
-           to-ib-fn (to-ib-fn x)
+  [k x]
+  (let [collection-class (meta/field-collection k)]
+    (if-let [java-coll-fn (to-java-coll collection-class)]
+      (java-coll-fn (map #(to-ib (meta/field-isa k) %) x))
+      
+      (let [type-key (or
+                      ((set (keys meta/struct-key->class)) k)
+                      (meta/field-isa k))
+            to-ib-fn (or (get-to-ib type-key)
+                         (get-to-ib k))]
+        (cond
+          ;;if we have a to-ib fn for its type or key we do that
+          to-ib-fn (to-ib-fn x)
 
-           ;;if it has a type but no custom translation, we turn it into the type of
-           ;;object described by its type key
-           type-key (map->obj (to-ib x) type-key)
+          ;;if it has a type but no custom translation, we turn it into the type of
+          ;;object described by its type key
+          type-key (map->obj x type-key)
 
-           :else x))))))
+          :else x)))))
 
 (defn to-clj-coll [coll-type xs]
   (condp isa? coll-type
@@ -122,20 +121,22 @@
 ;;qualifying;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn qualify-map [parent m]
-  (m/map-kv
-   (fn [k v]
-     (let [qk         (u/qualify-key parent k)
-           field-type (meta/field-isa qk)
-           ;;todo: this will cause an error before specs can be
-           ;;checked if we expect a feild-type but receive a scalar
-           v          (if field-type
-                        (if (vector? v)
-                          (mapv #(qualify-map field-type %) v)
-                          (qualify-map field-type v))
-                        v)]
-       (m/map-entry qk v)))
-   m))
+(defn walk-qualified
+  "qualify-map but using walk2"
+  ([f parent x] (walk-qualified f parent x identity))
+  ([f parent x after]
+   (walk/walk
+    (fn [x]
+      (if (map-entry? x)
+        (let [k          (key x)
+              v          (val x)
+              qkey       (u/qualify-key parent k)
+              field-type (meta/field-isa qkey)
+              type       (or field-type qkey)]
+          (m/map-entry qkey (walk-qualified f type v (fn [x] (f qkey x)))))
+        (walk-qualified f parent x)))
+    after
+    x)))
 
 (defn unqualify-walk [x]
   (cond
@@ -246,9 +247,7 @@
   (maybe-validate req-vec)
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
-        qarg-map (qualify-map spec-key arg-map)
-        ib-args  (to-ib qarg-map)]
-
+        ib-args (walk-qualified to-ib spec-key arg-map)]
     (invoke (:ecs conn)
             (meta/msg-key->ib-name spec-key)
             (argmap->arglist spec-key ib-args))
