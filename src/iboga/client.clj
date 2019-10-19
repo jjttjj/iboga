@@ -122,7 +122,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn walk-qualified
-  "qualify-map but using walk2"
+  "Walks the structure x with spec key parent. Recursively qualifies all
+  keywords in maps and sequences of maps with the spec key their
+  corresponding TWS api type, then calls a two-argument function f on
+  the qualified keyword and value, returning the value in place."
   ([f parent x] (walk-qualified f parent x identity))
   ([f parent x after]
    (walk/walk
@@ -138,17 +141,19 @@
     after
     x)))
 
-(defn unqualify-walk [x]
+(defn deep-unqualify
+  "Recursivly unqualifies all keys in maps or sequences of maps"
+  [x]
   (cond
     (map? x)
     (m/map-kv
      (fn [k v]
        (m/map-entry (u/unqualify k)
-                    (unqualify-walk v)))
+                    (deep-unqualify v)))
      x)
 
     (sequential? x)
-    (mapv unqualify-walk x)
+    (mapv deep-unqualify x)
 
     :else x))
 
@@ -159,7 +164,7 @@
 (defn unqualify-msg [msg]
   (-> msg
       (update 0 u/unqualify)
-      (update 1 (comp unqualify-walk from-ib))))
+      (update 1 (comp deep-unqualify from-ib))))
 
 (defn process-messages [client reader signal]
   (while (.isConnected client)

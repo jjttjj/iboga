@@ -49,7 +49,7 @@
 
 (deftest test-unqualify-walk
   (is (= complex-order
-         (ib/unqualify-walk
+         (ib/deep-unqualify
           (ib/walk-qualified #(identity %2)
                              :iboga.req/place-order complex-order)))))
 
