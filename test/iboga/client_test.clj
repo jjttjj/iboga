@@ -1,7 +1,9 @@
 (ns iboga.client-test
   (:require [iboga.client :as ib]
             [clojure.test :refer :all]
-            [clojure.tools.logging :as log])
+            [clojure.tools.logging :as log]
+            [iboga.util :as u]
+            [iboga.impl.convert :as convert])
   (:import [java.time LocalDate LocalDateTime]
            [com.ib.client Contract Order ComboLeg TagValue PriceIncrement]
            java.util.ArrayList))
@@ -23,7 +25,7 @@
     :smart-combo-routing-params 
     [{:tag "NonGuaranteed" :value 0}]}})
 
-(deftest test-qualify-map
+(deftest test-qualify-req
   (is (= (ib/walk-qualified #(identity %2) :iboga.req/place-order complex-order)
          {:iboga.req.place-order/order-id 111
           :iboga.req.place-order/contract
@@ -56,7 +58,7 @@
 (deftest test-to-ib
   (let [{my-order    :iboga.req.place-order/order
          my-contract :iboga.req.place-order/contract}
-        (ib/walk-qualified ib/to-ib :iboga.req/place-order complex-order)
+        (ib/walk-qualified convert/to-ib :iboga.req/place-order complex-order)
 
         {their-order    :iboga.req.place-order/order
          their-contract :iboga.req.place-order/contract}
@@ -86,12 +88,12 @@
                       (ArrayList. [(TagValue. "NonGuaranteed" "0")])))}]
     ;;note: IB overrides .equals and theirs cannot be trusted at the object level.
     (doseq [prop ["symbol" "secType" "currency" "exchange" "comboLegs"]]
-      (is (= (ib/invoke their-contract prop (into-array []))
-             (ib/invoke my-contract prop (into-array [])))))
+      (is (= (u/invoke their-contract prop (into-array []))
+             (u/invoke my-contract prop (into-array [])))))
 
     (doseq [prop ["action" "orderType" "totalQuantity" "smartComboRoutingParams"]]
-      (is (= (ib/invoke their-order prop (into-array []))
-             (ib/invoke my-order prop (into-array [])))))))
+      (is (= (u/invoke their-order prop (into-array []))
+             (u/invoke my-order prop (into-array [])))))))
 
 (deftest test-from-ib
   (is (= #:iboga.recv.market-rule
@@ -99,7 +101,33 @@
           :price-increments [#:iboga.price-increment
                              {:increment 0.01
                               :low-edge  0.0}]}
-         (ib/from-ib
+         (convert/from-ib
           #:iboga.recv.market-rule
           {:market-rule-id   26
            :price-increments (ArrayList. [(PriceIncrement. 0.0 0.01)])}))))
+
+;;integration tests, wip
+(comment
+  (deftest test-send-and-recieve
+    (let [ib-initialized? (promise)
+          ib
+          (ib/client (fn [[msg-key payload]]
+                       (println payload)
+                       (when (= msg-key :next-valid-id)
+                         (deliver ib-initialized? true))
+                       (when (and (= msg-key :error)
+                                  (not (= (.getMessage (:e payload))
+                                          "Socket closed")))
+                         (log/debug payload))))
+          market-rule-msg (promise)]
+      (ib/connect ib "localhost" 4002) ;;4002 for ib-gateway, 7497 for TWS paper
+      (deref ib-initialized? 2000 ::timeout)
+      (ib/add-handler ib (fn [[msg-key _ :as msg]]
+                           (when (= :market-rule msg-key)
+                             (deliver market-rule-msg msg))))
+      (ib/req ib [:market-rule {:market-rule-id 26}])
+      (is (= (deref market-rule-msg 2000 ::timeout)
+             [:market-rule
+              {:market-rule-id   26
+               :price-increments [{:increment 0.01 :low-edge 0.0}]}]))
+      (ib/disconnect ib))))

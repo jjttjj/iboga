@@ -1,8 +1,102 @@
-(ns iboga.impl
+(ns iboga.impl.convert-old
   (:require [clojure.spec.alpha :as s]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [iboga.meta :as meta]
+            [iboga.util :as u]
+            [iboga.specs]
+            [medley.core :as m])
   (:import [java.time LocalDate LocalDateTime]
            java.time.format.DateTimeFormatter))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;schema;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def schema (atom {}))
+
+(defn def-to-ib   [k f] (swap! schema assoc-in [k :to-ib] f))
+(defn def-from-ib [k f] (swap! schema assoc-in [k :from-ib] f))
+
+(defn get-to-ib   [k] (get-in @schema [k :to-ib]))
+(defn get-from-ib [k] (get-in @schema [k :from-ib]))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;transform;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn construct [struct-key args]
+  (let [cname (name (.getName (meta/struct-key->class struct-key)))]
+    (clojure.lang.Reflector/invokeConstructor
+     (resolve (symbol cname))
+     (to-array args))))
+
+(defn map->obj [m type-key]
+  (let [obj (construct type-key [])]
+    (doseq [[k v] m]
+      (u/invoke obj (meta/struct-field-key->ib-name k) [v]))
+    obj))
+
+(defn obj->map [obj]
+  (->> (meta/struct-class->getter-fields (class obj))
+       (map
+        (fn [{:keys [spec-key ib-name]}]
+          (when-some [v (u/invoke obj ib-name [])]
+            (m/map-entry spec-key v))))
+       (into {})))
+
+(def to-java-coll
+  {java.util.List (fn [xs] (java.util.ArrayList. xs))
+   java.util.Map  (fn [xs] (java.util.HashMap xs))
+   java.util.Set  (fn [xs] (java.util.HashSet. xs))})
+
+(defn to-ib
+  [k x]
+  (let [collection-class (meta/field-collection k)]
+    (if-let [java-coll-fn (to-java-coll collection-class)]
+      (java-coll-fn (map #(to-ib (meta/field-isa k) %) x))
+      
+      (let [type-key (or
+                      ((set (keys meta/struct-key->class)) k)
+                      (meta/field-isa k))
+            to-ib-fn (or (get-to-ib type-key)
+                         (get-to-ib k))]
+        (cond
+          ;;if we have a to-ib fn for its type or key we do that
+          to-ib-fn (to-ib-fn x)
+          
+          ;;if it has a type but no custom translation, we turn it into the type of
+          ;;object described by its type key
+          type-key (map->obj x type-key)
+          
+          :else x)))))
+
+(defn to-clj-coll [coll-type xs]
+  (condp isa? coll-type
+    java.util.ArrayList (into [] xs)
+    java.util.HashMap   (into {} xs)
+    java.util.HashSet   (into #{} xs)
+    ;;else it should be an array
+    (vec xs)))
+
+(defn from-ib
+  ([m] (m/map-kv #(m/map-entry %1 (from-ib %1 %2)) m))
+  ([k x]
+   (let [from-ib-fn (get-from-ib k)
+         coll-type  (meta/field-collection k)]
+     (cond
+       coll-type
+       (to-clj-coll coll-type (map #(from-ib (meta/field-isa k) %) x))
+       
+       ;;allow custom translation to/from ib
+       (and (not from-ib-fn) (meta/struct-class->getter-fields (class x)))
+       (from-ib (obj->map x))
+       
+       from-ib-fn (from-ib-fn x)
+       
+       (meta/iboga-enum-classes (type x)) (str x)
+       
+       :else x))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;convert;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -81,8 +175,6 @@
    #:iboga.tag-value{:tag   {:spec any?}
                      :value {:spec any?}}
 
-   ;;{:iboga/contract {:to-ib (fn [x] (println x) x)}}
-
    #:iboga.contract
    {:sec-type                          {:spec :iboga.enum/sec-type}
     :last-trade-date-or-contract-month {:spec    date?
@@ -125,5 +217,10 @@
     (when spec
       (eval `(s/def ~k ~spec)))))
 
-(def schema (atom default-schema))
 
+
+(defn init []
+  (reset! schema default-schema)
+  (def-included-specs))
+
+(init)

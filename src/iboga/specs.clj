@@ -1,11 +1,8 @@
 (ns iboga.specs
   (:require [clojure.spec.alpha :as s]
-            [clojure.tools.logging :as log]
-            [iboga.impl :as impl]
             [iboga.meta :as meta]
-            [iboga.util :as u]
-            [medley.core :as m]))
-
+            [iboga.util :as u])
+  (:import [java.time LocalDate LocalDateTime]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;specs;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -53,12 +50,41 @@
   (def-enum-specs)
   (def-struct-specs)
   (def-req-specs)
-  (def-field-specs)
-  (impl/def-included-specs))
-
+  (def-field-specs))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;init;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (init-specs)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;custom specs;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn local-date-time? [x]
+  (instance? LocalDateTime x))
+
+(defn date? [x]
+  (instance? LocalDate x))
+
+(s/def :iboga/tag-value
+  (s/keys :req-un [:iboga.tag-value/tag :iboga.tag-value/value]))
+
+(s/def :iboga.contract/sec-type :iboga.enum/sec-type)
+(s/def :iboga.contract/last-trade-date-or-contract-month date?)
+
+
+(s/def ::rth? boolean?)
+
+(s/def :iboga.req.historical-data/end (s/nilable local-date-time?))
+(s/def :iboga.req.historical-data/duration    #(re-find #"[0-9]+ [SDWMY]$" %))
+(s/def :iboga.req.historical-data/bar-size    :iboga.enum/bar-size)
+(s/def :iboga.req.historical-data/show        :iboga.enum/show)
+(s/def :iboga.req.historical-data/format-date #{1})
+(s/def :iboga.req.historical-data/rth?        ::rth?)
+
+(s/def :iboga.req.head-timestamp/show        :iboga.enum/show)
+(s/def :iboga.req.head-timestamp/format-date #{1})
+(s/def :iboga.req.head-timestamp/rth?        ::rth?)
+

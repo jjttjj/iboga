@@ -1,107 +1,13 @@
 (ns iboga.client
-  (:require [iboga.meta :as meta]
+  (:require [clojure.spec.alpha :as s]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
+            [iboga.impl.convert :as convert]
+            [iboga.meta :as meta]
             [iboga.util :as u]
-            [medley.core :as m]
-            [iboga.impl :as impl]
             [iboga.specs]
-            [clojure.spec.alpha :as s]
-            [clojure.walk :as walk])
+            [medley.core :as m])
   (:import [com.ib.client EClientSocket EJavaSignal EReader]))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;util;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn invoke [obj mname args]
-  (clojure.lang.Reflector/invokeInstanceMethod obj mname (to-array args)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;ib transformations;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn def-to-ib   [k f] (swap! impl/schema assoc-in [k :to-ib] f))
-(defn def-from-ib [k f] (swap! impl/schema assoc-in [k :from-ib] f))
-
-(defn get-to-ib   [k] (get-in @impl/schema [k :to-ib]))
-(defn get-from-ib [k] (get-in @impl/schema [k :from-ib]))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;transform;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn construct [struct-key args]
-  (let [cname (name (.getName (meta/struct-key->class struct-key)))]
-    (clojure.lang.Reflector/invokeConstructor
-     (resolve (symbol cname))
-     (to-array args))))
-
-(defn map->obj [m type-key]
-  (let [obj (construct type-key [])]
-    (doseq [[k v] m]
-      (invoke obj (meta/struct-field-key->ib-name k) [v]))
-    obj))
-
-(defn obj->map [obj]
-  (->> (meta/struct-class->getter-fields (class obj))
-       (map
-        (fn [{:keys [spec-key ib-name]}]
-          (when-some [v (invoke obj ib-name [])]
-            (m/map-entry spec-key v))))
-       (into {})))
-
-(def to-java-coll
-  {java.util.List (fn [xs] (java.util.ArrayList. xs))
-   java.util.Map  (fn [xs] (java.util.HashMap xs))
-   java.util.Set  (fn [xs] (java.util.HashSet. xs))})
-
-(defn to-ib
-  [k x]
-  (let [collection-class (meta/field-collection k)]
-    (if-let [java-coll-fn (to-java-coll collection-class)]
-      (java-coll-fn (map #(to-ib (meta/field-isa k) %) x))
-      
-      (let [type-key (or
-                      ((set (keys meta/struct-key->class)) k)
-                      (meta/field-isa k))
-            to-ib-fn (or (get-to-ib type-key)
-                         (get-to-ib k))]
-        (cond
-          ;;if we have a to-ib fn for its type or key we do that
-          to-ib-fn (to-ib-fn x)
-
-          ;;if it has a type but no custom translation, we turn it into the type of
-          ;;object described by its type key
-          type-key (map->obj x type-key)
-
-          :else x)))))
-
-(defn to-clj-coll [coll-type xs]
-  (condp isa? coll-type
-    java.util.ArrayList (into [] xs)
-    java.util.HashMap   (into {} xs)
-    java.util.HashSet   (into #{} xs)
-    ;;else it should be an array
-    (vec xs)))
-
-(defn from-ib
-  ([m] (m/map-kv #(m/map-entry %1 (from-ib %1 %2)) m))
-  ([k x]
-   (let [from-ib-fn (get-from-ib k)
-         coll-type  (meta/field-collection k)]
-     (cond
-       coll-type
-       (to-clj-coll coll-type (map #(from-ib (meta/field-isa k) %) x))
-       
-       ;;allow custom translation to/from ib
-       (and (not from-ib-fn) (meta/struct-class->getter-fields (class x)))
-       (from-ib (obj->map x))
-
-       from-ib-fn (from-ib-fn x)
-
-       (meta/iboga-enum-classes (type x)) (str x)
-       
-       :else x))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;EWrapper;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -136,11 +42,18 @@
               qkey       (u/qualify-key parent k)
               field-type (meta/field-isa qkey)
               type       (or field-type qkey)]
-          (m/map-entry qkey (walk-qualified f type v (fn [x] (f qkey x)))))
+          (m/map-entry
+           qkey
+           ;;give then entry a key qualified with it's parent,
+           ;;but then process the value according to it's "type".
+           ;;finally, callback f on the result with the parent-key
+           (walk-qualified f type v (fn [x] (f qkey x)))))
         (walk-qualified f parent x)))
     after
     x)))
 
+;;todo: this + from-ib should be more similar to walk-qualified+to-ib:
+;;combining the walking and modification in one step
 (defn deep-unqualify
   "Recursivly unqualifies all keys in maps or sequences of maps"
   [x]
@@ -164,7 +77,7 @@
 (defn unqualify-msg [msg]
   (-> msg
       (update 0 u/unqualify)
-      (update 1 (comp deep-unqualify from-ib))))
+      (update 1 (comp deep-unqualify convert/from-ib))))
 
 (defn process-messages [client reader signal]
   (while (.isConnected client)
@@ -252,8 +165,8 @@
   (maybe-validate req-vec)
   (let [spec-key (req-spec-key req-key)
         ;;these two steps can/should be combined:
-        ib-args (walk-qualified to-ib spec-key arg-map)]
-    (invoke (:ecs conn)
+        ib-args (walk-qualified convert/to-ib spec-key arg-map)]
+    (u/invoke (:ecs conn)
             (meta/msg-key->ib-name spec-key)
             (argmap->arglist spec-key ib-args))
     req-vec))
