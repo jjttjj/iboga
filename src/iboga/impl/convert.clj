@@ -32,13 +32,14 @@
   (->> (str/split hours-str #";")
        (keep
         (fn [s]
-          (if-not (.contains s "CLOSED")
-            (->> (str/split s #"-")
-                 (mapv #(LocalDateTime/parse % contract-interval-formatter))
-                 (zipmap [:open :close]))
-            {:closed (-> s
-                         (str/replace #":CLOSED$" "")
-                         (LocalDate/parse contract-interval-formatter))})))))
+          (when (not= s "")
+            (if-not (.contains s "CLOSED")
+              (->> (str/split s #"-")
+                   (mapv #(LocalDateTime/parse % contract-interval-formatter))
+                   (zipmap [:open :close]))
+              {:closed (-> s
+                           (str/replace #":CLOSED$" "")
+                           (LocalDate/parse contract-interval-formatter))}))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;methods;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
