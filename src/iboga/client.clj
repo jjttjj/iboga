@@ -84,22 +84,29 @@
     (.waitForSignal signal)
     (.processMsgs reader)))
 
-;;should possibly return the client-id, as a promise?
 (defn client
-  "Takes one or more message handler functions and returns a map which
-  represents an IB api client."
-  [& handlers]
-  (let [handlers       (atom (set handlers))
-        handle-message (fn [msg]
-                         (doseq [f @handlers]
-                           (try (f (unqualify-msg msg))
-                                (catch Throwable t
-                                  (log/error t "Error handling message")))))
-        wrap           (wrapper handle-message)
-        sig            (EJavaSignal.)
-        ecs            (EClientSocket. wrap sig)
-        next-id        (atom 0)
-        next-id-fn     #(swap! next-id inc)] ;;todo: seperate order ids?
+  "Takes an optional global message handler function and returns a map
+  which represents an IB api client. The global message handler is
+  called on all received messages before any added handlers. Unlike
+  added handlers which are used for side effects, the global handler
+  must return a message that all added handlers are called on "
+  [& [global-handler]]
+  (let [handlers   (atom #{})
+        handle-message
+        (fn [msg]
+          (let [msg (-> msg
+                        unqualify-msg
+                        (cond-> global-handler global-handler))]
+            (doseq [f @handlers]
+              (try
+                (f msg)
+                (catch Throwable t
+                  (log/error t "Error handling message" msg))))))
+        wrap       (wrapper handle-message)
+        sig        (EJavaSignal.)
+        ecs        (EClientSocket. wrap sig)
+        next-id    (atom 0)
+        next-id-fn #(swap! next-id inc)] ;;todo: seperate order ids?
     {:connect-fn (fn [host port & [client-id]]
                    (.eConnect ecs host port (or client-id (rand-int (Integer/MAX_VALUE))))
                    (let [reader (EReader. ecs sig)]

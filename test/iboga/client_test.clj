@@ -111,14 +111,15 @@
   (deftest test-send-and-recieve
     (let [ib-initialized? (promise)
           ib
-          (ib/client (fn [[msg-key payload]]
+          (ib/client (fn [[msg-key payload :as msg]]
                        (println payload)
                        (when (= msg-key :next-valid-id)
                          (deliver ib-initialized? true))
                        (when (and (= msg-key :error)
                                   (not (= (.getMessage (:e payload))
                                           "Socket closed")))
-                         (log/debug payload))))
+                         (log/error payload))
+                       msg))
           market-rule-msg (promise)]
       (ib/connect ib "localhost" 4002) ;;4002 for ib-gateway, 7497 for TWS paper
       (deref ib-initialized? 2000 ::timeout)
