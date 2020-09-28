@@ -11,6 +11,15 @@ Iboga requires that the the Java tws-api client be compiled with the javac `--pa
 
 https://github.com/jjttjj/tws-install
 
+
+Once that is done, you will need to add the iboga dependency as well as the tws dependency to your `deps.edn` to use iboga in your project.
+
+```
+com.interactivebrokers/tws-api {:mvn/version "979.01-with-parameters"}
+dev.jt/iboga {:git/url "https://github.com/jjttjj/iboga.git"
+             :sha     "0c99d5cdf5389da30cd095b947d779d15c2b92b5"}
+```
+
 ## Usage
 
 ```clojure
