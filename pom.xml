@@ -35,7 +35,7 @@
     <dependency>
       <groupId>com.interactivebrokers</groupId>
       <artifactId>tws-api</artifactId>
-      <version>9.73.01-SNAPSHOT</version>
+      <version>979.01-with-parameters</version>
     </dependency>
   </dependencies>
   <build>
