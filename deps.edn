@@ -1,10 +1,10 @@
-{:deps
- {org.clojure/clojure              {:mvn/version "1.10.1"}
-  medley                           {:mvn/version "1.2.0"}
-  org.clojure/tools.logging        {:mvn/version "0.5.0"}
-  camel-snake-kebab                {:mvn/version "0.4.0"}
-  com.interactivebrokers/tws-api   {:mvn/version "9.73.01-SNAPSHOT"}}
-
- :aliases {:dev {:extra-paths ["dev"]}}
- 
- :paths ["src" "resources"]}
+{:paths ["src"]
+ :deps
+ {org.clojure/clojure       {:mvn/version "1.10.1"}
+  org.clojure/tools.logging {:mvn/version "1.1.0"}
+  org.clojure/java.data     {:mvn/version "1.0.86"}
+  org.clojure/core.async    {:mvn/version "1.2.603"}}
+ :aliases
+ {:dev
+  {:extra-deps
+   {com.interactivebrokers/tws-api {:mvn/version "979.01-with-parameters"}}}}}
