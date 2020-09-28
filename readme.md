@@ -24,7 +24,8 @@ https://github.com/jjttjj/tws-install
 ```
 
 `ib/on` attaches a handler to the connection. We can pass it an options map containing `:xf` and/or `:buf` to set a transducer to pass all messages through, or a buffer for the messages.
-```
+
+```clojure
 (ib/on c1 #(println "Error: " (or (:errorMsg %) %)) {:xf (ib/match-op :error)})
 (def log (atom []))
 (ib/on c1 #(swap! log conj %))
@@ -53,7 +54,8 @@ To send a message to the IB client use `ib/send!`.
 
 All messages sent to and received from IB will be a map which has an `::ib/op` key which corresponds to the name of the EClient/EWrapper method names. It will also contain an unqualified keyword+value pair for each parameter, with the keyword corresponding to the name used in the Java Client source. See [EWrapper](http://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html) for received messages and [EClient](http://interactivebrokers.github.io/tws-api/classIBApi_1_1EClient.html) for send messages.
 You can use `ib/req->params` and `ib/recv->params` to look up parameter names for a given method.
-```
+
+```clojure
 (ib/req->params :reqHistoricalData)
 ;;=>
 [:tickerId
@@ -70,7 +72,7 @@ You can use `ib/req->params` and `ib/recv->params` to look up parameter names fo
 
 IB data types such as `Contract` and `Order` can be specified as maps with keywords which correspond to getters and setters, which additionall need an `::ib/type` key with a value corresponding to the non-qualified class name, such as :Contract or :Order.
 
-```
+```clojure
 {:symbol      sym
  :secType     "STK"
  :localSymbol "SPY"
