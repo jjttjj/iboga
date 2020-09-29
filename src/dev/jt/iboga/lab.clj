@@ -25,7 +25,7 @@
 
 
 (defn client [{::keys [host port client-id ] :as ctx
-               :keys  [buf]}]
+               :keys  [::buf ::out]}]
   {:pre [host port client-id]}
   (let [out  (or out (chan (or buf 10)))
         ib   (-> ctx
