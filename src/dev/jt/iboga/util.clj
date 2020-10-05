@@ -46,3 +46,15 @@
      (when-let [s (seq coll)]
        (let [x (first s)]
          (cons x (if-not (pred x) (take-upto pred (rest s)))))))))
+
+
+(defn until-end
+  "Returns a lazy sequence of items from coll up to and including the
+  first item that has an ::ib/op type whose name ends in 'End'. This
+  commonly specifies the last item in a stream of asynchronous replies
+  from TWS.
+
+  Returns a transducer when no collection is provided"
+  ([]
+   (take-upto #(clojure.string/ends-with? (name (:dev.jt.iboga/op %)) "End")))
+  ([xs] (into [] (until-end) xs)))

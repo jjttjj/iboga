@@ -12,6 +12,20 @@
            [com.ib.client Types Contract Order TagValue EClient EWrapper EDecoder
             EJavaSignal EReader EClientSocket]))
 
+
+
+(defonce req-id (atom 0))
+(defn next-req-id!
+  "Returns the next valid request id for calls to TWS.
+
+  All requests made to the TWS API require the caller supply a globally
+  unique (per connection), monotonically increasing integer request-id
+  number. The caller uses this as a correlation ID to determine which
+  replies from TWS match the call."
+  []
+  (swap! req-id inc))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Data
 
